@@ -4,37 +4,6 @@ require 'active_support/core_ext/hash/deep_merge'
 
 module BodyBuilder
   class Builder
-    
-    BOOL_MAP = {
-      and: :must,
-      or: :should,
-      not: :must_not
-    }
-  
-    # Utility that converts queries or filters object into a bool clause
-    # NOTICE: if ONLY 1 clause exists and it is inside 'and' key, the returned
-    # hash is NOT wrapped in a bool clause
-    MAYBE_WRAP_IN_BOOL = lambda do |object|
-  
-      #return if condition met
-      if (object[:and].length == 1 &&
-          object[:or].empty? &&
-          object[:not].empty?)
-            return object[:and].first.build
-      end
-  
-      # build bool clause
-      BOOL_MAP.each_with_object({}) do |(old_k, new_k), obj|
-        value = object[old_k]
-        next if value.empty?
-        obj[:bool] ||= {}
-        if value.size == 1
-          obj[:bool][new_k] = value.first.build
-        else
-          obj[:bool][new_k] = value.map(&:build)
-        end
-      end
-    end
   
     attr_reader :base_query, :filters, :queries, :raw_options, :sort_fields, :parent
   
@@ -46,7 +15,6 @@ module BodyBuilder
       reset!
     end
   
-
     def filter(*args, &block)
       _add_clause(true, :and, *args, &block)
     end
@@ -101,25 +69,64 @@ module BodyBuilder
   
     def build
       query = Marshal.load(Marshal.dump(base_query))
-      bool_filters = MAYBE_WRAP_IN_BOOL.call(@filters)
-      bool_queries = MAYBE_WRAP_IN_BOOL.call(@queries)
-
-      # RETURN plain object when child
-      if parent
-        return [bool_filters, bool_queries].inject({}) do |acum, o|
-          acum.merge(o)
-        end
-      end
       
-      # filters
-      if !bool_filters.empty?
-        query.deep_merge!({query: {bool: {filter: bool_filters}}})
-      end
+      # Process queries and filters
+      filters_and_queries = {filters: @filters, queries: @queries}
+
+      hash = filters_and_queries.inject({}) do |acum, (type, object)|
+
+        is_simple_filter = type == :filters && 
+            object[:or].empty? && 
+            !self.has_queries? && 
+            !object.any?{|k, v| v.any?{|c| c.block }}
+
+        mapping = if is_simple_filter
+          { and: :filter, not: :must_not }
+        else
+          { and: :must, or: :should, not: :must_not }
+        end
+
+        #RETURN if ONLY 1 clause exists and it is inside 'and' key
+        to_merge = if (object[:and].length == 1 && object[:or].empty? && object[:not].empty?)
+          if type == :filters && !parent
+            { bool: { filter: object[:and].first.build }}
+          else
+            object[:and].first.build
+          end
+        else
+          # build bool clause
+          object.inject({}) do |obj, (key, clauses)|
+            next obj if clauses.empty?
   
-      # queries
-      if !bool_queries.empty?
-        query.deep_merge!({query: bool_queries})
+            hash = if clauses.size == 1
+              clauses.first.build
+            else
+              clauses.map(&:build)
+            end
+
+            path = if parent
+              [mapping[key]]
+            elsif is_simple_filter || type == :queries
+              [:bool, mapping[key]]
+            else
+              [:bool, :filter, :bool, mapping[key]]
+            end
+
+            obj = obj.deep_merge(
+              path.reverse.inject(hash){|acum, key| {"#{key}".to_s => acum } }
+            )
+            
+          end
+        end
+    
+        acum.deep_merge(to_merge)
       end
+
+      if parent
+        return hash 
+      end
+
+      query.deep_merge!({query: hash}) unless hash.empty?
 
       raw_options.each do |option|
         query[option[:key]] = option[:value]

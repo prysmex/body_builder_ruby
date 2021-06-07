@@ -75,7 +75,11 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_1
+  ######
+  #ARGS#
+  ######
+
+  def test_single_query_1_arg
     a = @builder
         .query('match_all')
         .build
@@ -83,24 +87,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_2
-    a = @builder
-        .filter('terms', 'tags', ['Emerging'])
-        .build
-    b = { "query": { "bool": { "filter": { "terms": { "tags": [ "Emerging" ] } } } } }
-    compare_jsons(a, b)
-  end
-
-  def test_example_3
-    a = @builder
-        .filter('terms', 'tags', ['Emerging'])
-        .filter('terms', 'tags', ['asdf'])
-        .build
-    b = { "query": { "bool": { "filter": { "bool": { "must": [ { "terms": { "tags": [ "Emerging" ] } }, { "terms": { "tags": [ "asdf" ] } } ] } } } } }
-    compare_jsons(a, b)
-  end
-
-  def test_example_4
+  def test_single_query_2_args
     a = @builder
         .query('exists', 'user')
         .build
@@ -108,15 +95,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_5
-    a = @builder
-        .query('match', 'someId', 2)
-        .build
-    b = { "query": { "match": { "someId": 2 } } }
-    compare_jsons(a, b)
-  end
-
-  def test_example_6
+  def test_single_query_3_args
     a = @builder
         .query('range', 'date', {gt: 'now-1d'})
         .build()
@@ -124,7 +103,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_7
+  def test_single_query_4_args
     a = @builder
         .query('geo_distance', 'point', {lat: 40, lon: 20}, {distance: '12km'})
         .build()
@@ -132,7 +111,134 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_8
+  #########
+  #FILTERS#
+  #########
+
+  # SINGLES
+
+  def test_single_filter
+    a = @builder
+        .filter('terms', 'tags', ['Emerging'])
+        .build
+    b = { "query": { "bool": { "filter": { "terms": { "tags": [ "Emerging" ] } } } } }
+    compare_jsons(a, b)
+  end
+
+  def test_single_and_filter
+    a = @builder
+        .and_filter('terms', 'tags', ['Emerging'])
+        .build
+    b = { "query": { "bool": { "filter": { "terms": { "tags": [ "Emerging" ] } } } } }
+    compare_jsons(a, b)
+  end
+
+  def test_single_or_filter
+    a = @builder
+        .or_filter('terms', 'tags', ['Emerging'])
+        .build
+    b = { "query": { "bool": { "filter": { "bool": { "should": { "terms": { "tags": [ "Emerging" ] } } } } } } }
+    compare_jsons(a, b)
+  end
+
+  def test_single_not_filter
+    a = @builder
+        .not_filter('terms', 'tags', ['Emerging'])
+        .build
+    b = { "query": { "bool": { "must_not": { "terms": { "tags": [ "Emerging" ] } } } } }
+    compare_jsons(a, b)
+  end
+
+  #COMBINED
+  def test_combined_filters
+    a = @builder
+        .filter('terms', 'tags', 'filter')
+        .or_filter('terms', 'tags', 'or_filter')
+        .not_filter('terms', 'tags', 'not_filter')
+        .build
+    b = { "query": { "bool": { "filter": { "bool": { "must": { "terms": { "tags": "filter" } }, "should": { "terms": { "tags": "or_filter" } }, "must_not": { "terms": { "tags": "not_filter" } } } } } } }
+    compare_jsons(a, b)
+  end
+
+  #DUPLICATED
+
+  #######
+  #QUERY#
+  #######
+
+  # SINGLES
+
+  def test_single_query
+    a = @builder
+        .query('match', 'tags', 'Emerging')
+        .build
+    b = { "query": { "match": { "tags": "Emerging" } } }
+    compare_jsons(a, b)
+  end
+
+  def test_single_and_query
+    a = @builder
+        .query('match', 'tags', 'Emerging')
+        .build
+    b = { "query": { "match": { "tags": "Emerging" } } }
+    compare_jsons(a, b)
+  end
+
+  def test_single_or_query
+    a = @builder
+        .or_query('terms', 'tags', ['Emerging'])
+        .build()
+    b = { "query": { "bool": { "should": { "terms": { "tags": [ "Emerging" ] } } } } }
+    compare_jsons(a, b)
+  end
+
+  def test_single_not_query
+    a = @builder
+        .not_query('terms', 'tags', ['Emerging'])
+        .build()
+    b = { "query": { "bool": { "must_not": { "terms": { "tags": [ "Emerging" ] } } } } }
+    compare_jsons(a, b)
+  end
+
+  #COMBINED
+  def test_combined_querys
+    a = @builder
+        .query('terms', 'tags', 'query')
+        .or_query('terms', 'tags', 'or_query')
+        .not_query('terms', 'tags', 'not_query')
+        .build
+    b = { "query": { "bool": { "must": { "terms": { "tags": "query" } }, "should": { "terms": { "tags": "or_query" } }, "must_not": { "terms": { "tags": "not_query" } } } } }
+    compare_jsons(a, b)
+  end
+
+  #######
+  #BLOCK#
+  #######
+
+  # def test_single_query_3
+  #   a = @builder
+  #       .query('nested', 'path', 'obj1') do |q|
+  #         q.query('match', 'obj1.color', 'blue')
+  #       end
+  #       .build()
+  #   b = { "query": { "nested": { "path": "obj1", "query": { "match": { "obj1.color": "blue" } } } } }
+  #   compare_jsons(a, b)
+  # end
+
+  #####################
+  #MULTI QUERY/FILTER #
+  #####################
+
+  def test_multi_1
+    a = @builder
+        .filter('terms', 'tags', ['Emerging'])
+        .filter('terms', 'tags', ['asdf'])
+        .build
+    b = { "query": { "bool": { "filter": [ { "terms": { "tags": [ "Emerging" ] } }, { "terms": { "tags": [ "asdf" ] } } ] } } }
+    compare_jsons(a, b)
+  end
+
+  def test_multi_2
     a = @builder
         .query('exists', 'user')
         .or_query('term', 'user', 'kimchy')
@@ -141,7 +247,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_9
+  def test_multi_3
     a = @builder
         .or_query('term', 'user', 'kimchy')
         .or_query('term', 'user', 'kimchy2')
@@ -150,7 +256,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_10
+  def test_multi_4
     a = @builder
 		    .query('exists', 'user')
         .or_query('term', 'user', 'kimchy')
@@ -160,7 +266,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_11
+  def test_multi_5
     a = @builder
         .filter('exists', 'user')
         .or_filter('term', 'user', 'kimchy')
@@ -169,7 +275,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_12
+  def test_multi_6
     a = @builder
         .filter('exists', 'user')
         .or_filter('term', 'user', 'kimchy')
@@ -179,7 +285,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_13
+  def test_multi_7
     a = @builder
         .filter('term', 'filter')
         .or_filter('term', 'or_filter')
@@ -192,7 +298,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_14
+  def test_multi_8
     a = @builder
         .filter('term', 'filter')
         .or_filter('term', 'or_filter')
@@ -211,17 +317,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_15
-    a = @builder
-        .query('nested', 'path', 'obj1') do |q|
-          q.query('match', 'obj1.color', 'blue')
-        end
-        .build()
-    b = { "query": { "nested": { "path": "obj1", "query": { "match": { "obj1.color": "blue" } } } } }
-    compare_jsons(a, b)
-  end
-
-  def test_example_16
+  def test_multi_9
     a = @builder.query('nested', 'path', 'obj1', {score_mode: 'avg'}) do |q|
           q.query('match', 'obj1.name', 'blue')
           q.query('range', 'obj1.count', {gt: 5})
@@ -230,7 +326,7 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  def test_example_17
+  def test_multi_10
     a = @builder
       .or_filter('bool') do |f|
           f.filter('terms', 'tags', ['Popular'])
@@ -245,7 +341,7 @@ class HelperTest < Minitest::Test
           f.filter('terms', 'companies', ['A', 'C', 'D'])
       end
       .build()
-    b = { "query": { "bool": { "filter": { "bool": { "should": [ { "bool": { "must": [ { "terms": { "tags": [ "Popular" ] } }, { "terms": { "brands": [ "A", "B" ] } } ], "should": { "bool": { "must": [ { "terms": { "tags": [ "Emerging" ] } }, { "terms": { "brands": [ "C" ] } } ] } } } }, { "bool": { "must": [ { "terms": { "tags": [ "Rumor" ] } }, { "terms": { "companies": [ "A", "C", "D" ] } } ] } } ] } } } } }
+    b = { "query": { "bool": { "filter": { "bool": { "should": [ { "bool": { "must": [ { "terms": { "tags": [ "Popular" ] } }, { "terms": { "brands": [ "A", "B" ] } } ], "should": { "bool": { "filter": [ { "terms": { "tags": [ "Emerging" ] } }, { "terms": { "brands": [ "C" ] } } ] } } } }, { "bool": { "filter": [ { "terms": { "tags": [ "Rumor" ] } }, { "terms": { "companies": [ "A", "C", "D" ] } } ] } } ] } } } } }
     compare_jsons(a, b)
   end
 
