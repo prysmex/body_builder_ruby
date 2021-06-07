@@ -229,6 +229,15 @@ class HelperTest < Minitest::Test
   #MULTI QUERY/FILTER #
   #####################
 
+  def test_multi_0
+    a = @builder
+        .query('match_all')
+        .filter('term', 'user', 'kimchy')
+        .build()
+    b = { "query": { "bool": { "filter": { "term": { "user": "kimchy" } }, "must": { "match_all": {} } } } }
+    compare_jsons(a, b)
+  end
+
   def test_multi_1
     a = @builder
         .filter('terms', 'tags', ['Emerging'])

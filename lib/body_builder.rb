@@ -72,28 +72,25 @@ module BodyBuilder
       
       # Process queries and filters
       filters_and_queries = {filters: @filters, queries: @queries}
-
+      
       hash = filters_and_queries.inject({}) do |acum, (type, object)|
-
-        is_simple_filter = type == :filters && 
-            object[:or].empty? && 
-            !self.has_queries? && 
-            !object.any?{|k, v| v.any?{|c| c.block }}
-
-        mapping = if is_simple_filter
-          { and: :filter, not: :must_not }
+        
+        to_merge = if (type == :queries && !self.has_filters? && only_one_and_clause?(type))
+          object[:and].first.build
         else
-          { and: :must, or: :should, not: :must_not }
-        end
 
-        #RETURN if ONLY 1 clause exists and it is inside 'and' key
-        to_merge = if (object[:and].length == 1 && object[:or].empty? && object[:not].empty?)
-          if type == :filters && !parent
-            { bool: { filter: object[:and].first.build }}
+          is_simple_filter = type == :filters && 
+            (
+              only_one_and_clause?(type) ||
+              (object[:or].empty? && !self.has_queries? && !object.any?{|k, v| v.any?{|c| c.block }})
+            )
+          
+          mapping = if is_simple_filter
+            { and: :filter, not: :must_not }
           else
-            object[:and].first.build
+            { and: :must, or: :should, not: :must_not }
           end
-        else
+
           # build bool clause
           object.inject({}) do |obj, (key, clauses)|
             next obj if clauses.empty?
@@ -122,15 +119,14 @@ module BodyBuilder
         acum.deep_merge(to_merge)
       end
 
-      if parent
-        return hash 
-      end
-
-      query.deep_merge!({query: hash}) unless hash.empty?
-
       raw_options.each do |option|
         query[option[:key]] = option[:value]
       end
+
+      # RETURN if nested (skip sort, size, from )
+      return hash if parent
+
+      query.deep_merge!({query: hash}) unless hash.empty?
 
       query[:sort] = sort_fields unless sort_fields.empty?
       query[:size] = @size unless @size.nil?
@@ -206,6 +202,11 @@ module BodyBuilder
     # Empties sort fields
     def reset_sort_fields!
       @sort_fields = []
+    end
+
+    def only_one_and_clause?(type)
+      object = type == :filters ? self.filters : self.queries
+      object[:and].length == 1 && object[:or].empty? && object[:not].empty?
     end
 
   end
