@@ -30,13 +30,14 @@ class HelperTest < Minitest::Test
     assert_respond_to @builder, :not_filter
 
     #other
+    assert_respond_to @builder, :base_query
     assert_respond_to @builder, :raw_option
     assert_respond_to @builder, :sort_field
   end
 
   def test_size
     a = @builder
-        .size(5)
+        .set_size(5)
         .build
     b = { "size": 5 }
     compare_jsons(a, b)
@@ -44,7 +45,7 @@ class HelperTest < Minitest::Test
 
   def test_from
     a = @builder
-        .from(50)
+        .set_from(50)
         .build
     b = { "from": 50 }
     compare_jsons(a, b)
@@ -225,6 +226,43 @@ class HelperTest < Minitest::Test
   #   compare_jsons(a, b)
   # end
 
+  #################
+  #WITH BASE QUERY#
+  #################
+
+  def test_base_query
+    @builder.base_query = {
+      query: {
+        bool: {
+        }
+      }
+    }
+    a = @builder
+        .query('match_all')
+        .build()
+    b = { "query": { "bool": { "must": { "match_all": {} } } } }
+    compare_jsons(a, b)
+  end
+
+  # { multi_match: { query: @search, fuzziness: 'AUTO' } }
+  # {constant_score: { filter: { terms: { id: integers } }, boost: 100 }}
+  def test_base_query_2
+    @builder.base_query = {
+      query: {
+        bool: {
+        }
+      }
+    }
+    a = @builder
+        .query('bool') do |b|
+          b.or_query('multi_match', { 'query': 'test', 'fuzziness': 'AUTO' })
+          b.or_query('constant_score', { 'filter': { 'terms': { 'id': ['1'] } }, 'boost': 100 })
+        end
+        .build()
+    b = { "query": { "bool": { "must": { "bool": { "should": [ { "multi_match": { "query": "test", "fuzziness": "AUTO" } }, { "constant_score": { "filter": { "terms": { "id": [ "1" ] } }, "boost": 100 } } ] } } } } }
+    compare_jsons(a, b)
+  end
+
   #####################
   #MULTI QUERY/FILTER #
   #####################
@@ -336,6 +374,14 @@ class HelperTest < Minitest::Test
   end
 
   def test_multi_10
+    a = @builder.query('a_key') do |q|
+          q.query('nice', 'wow')
+        end.build()
+    b = { "query": { "a_key": { "query": { "nice": { "field": "wow" } } } } }
+    compare_jsons(a, b)
+  end
+
+  def test_multi_11
     a = @builder
       .or_filter('bool') do |f|
           f.filter('terms', 'tags', ['Popular'])

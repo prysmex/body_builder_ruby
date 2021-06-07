@@ -30,9 +30,12 @@ module BodyBuilder
         builder = BodyBuilder::Builder.new(parent: self)
         child_builder = @block.call(builder)
         child_hash = builder.build
-        if type.to_sym == :nested
-          child_hash = {query: {bool: child_hash}}
-        else
+        if type.to_sym != :bool
+          if child_hash.any?{|k,v| [:must, :must_not, :filter, :should].include?(k.to_sym) }
+            child_hash = {query: {bool: child_hash}}
+          else
+            child_hash = {query: child_hash}
+          end
         end
         child_hash = child_hash[:bool] if child_hash.key?(:bool)
         hash.merge!(child_hash)

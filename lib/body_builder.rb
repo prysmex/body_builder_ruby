@@ -1,11 +1,13 @@
 require 'body_builder/version'
 require 'body_builder/clause'
 require 'active_support/core_ext/hash/deep_merge'
+require 'active_support/core_ext/hash/keys'
 
 module BodyBuilder
   class Builder
   
-    attr_reader :base_query, :filters, :queries, :raw_options, :sort_fields, :parent
+    attr_reader :filters, :queries, :raw_options, :sort_fields, :parent
+    attr_accessor :base_query, :size, :from
   
     # @param base_query [Hash] starting query definition
     # @param parent [Clause] parent clause when nested
@@ -57,25 +59,28 @@ module BodyBuilder
       self
     end
 
-    def size(size)
+    def set_size(size)
       @size = size
       self
     end
 
-    def from(from)
+    def set_from(from)
       @from = from
       self
     end
   
     def build
+      base_query = self.base_query.deep_transform_keys!{|k| k.to_sym}
       query = Marshal.load(Marshal.dump(base_query))
+
+      base_query_is_bool = base_query[:query]&.key?(:bool)
       
       # Process queries and filters
       filters_and_queries = {filters: @filters, queries: @queries}
       
       hash = filters_and_queries.inject({}) do |acum, (type, object)|
         
-        to_merge = if (type == :queries && !self.has_filters? && only_one_and_clause?(type))
+        to_merge = if !base_query_is_bool && (type == :queries && !self.has_filters? && only_one_and_clause?(type))
           object[:and].first.build
         else
 
@@ -95,7 +100,7 @@ module BodyBuilder
           object.inject({}) do |obj, (key, clauses)|
             next obj if clauses.empty?
   
-            hash = if clauses.size == 1
+            hash = if clauses.size == 1# && !base_query_is_bool
               clauses.first.build
             else
               clauses.map(&:build)
@@ -110,7 +115,7 @@ module BodyBuilder
             end
 
             obj = obj.deep_merge(
-              path.reverse.inject(hash){|acum, key| {"#{key}".to_s => acum } }
+              path.reverse.inject(hash){|acum, key| {"#{key}".to_sym => acum } }
             )
             
           end

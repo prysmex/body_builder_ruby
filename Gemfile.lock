@@ -8,7 +8,7 @@ GIT
 PATH
   remote: .
   specs:
-    body_builder (0.1.0)
+    body_builder (0.1.1)
       activesupport (= 5.0.1)
 
 GEM
