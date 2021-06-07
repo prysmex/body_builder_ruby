@@ -1,8 +1,6 @@
 # BodyBuilder
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/body_builder`. To experiment with that code, run `bin/console` for an interactive prompt.
-
-TODO: Delete this and the text above, and describe your gem
+An elasticsearch query body builder. Easily build complex queries for elasticsearch with a simple, predictable api. Based on https://github.com/danpaz/bodybuilder!
 
 ## Installation
 
@@ -22,7 +20,54 @@ Or install it yourself as:
 
 ## Usage
 
-TODO: Write usage instructions here
+Create a new builder by instantiating the `BodyBuilder::Builder`
+```ruby
+builder = BodyBuilder::Builder.new
+```
+
+To add clauses, the following methods are available:
+
+Filter context:
+- `filter` (alias: and_filter)
+- `or_filter`
+- `not_filter`
+
+Query context:
+- `query` (alias: and_query)
+- `or_query`
+- `not_query`
+
+Other useful methods are:
+- `raw_option`
+- `sort_field`
+- `size`
+- `from`
+
+Lets create our first query:
+
+```ruby
+builder.query('match_all')
+builder.build() #=> { "query": { "match_all": {} } }
+```
+
+We can continue adding clauses.. ToDo
+
+
+
+
+For more examples, check tests
+
+### Nesting
+
+
+
+
+## ToDo:
+- `agg`
+- `suggestion`
+
+
+
 
 ## Development
 
