@@ -400,4 +400,48 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
+
+  #minimumShouldMatch
+
+  def test_mimimum_should_match_1
+    a = @builder
+      .or_filter('term', 'state', 'one')
+      .or_filter('term', 'state', 'two')
+      .or_query('match', 'message', 'nice')
+      .or_query('match', 'message', 'something')
+      .set_query_minimum_should_match(2)
+      .set_filter_minimum_should_match(3)
+      .build()
+    b = { "query": { "bool": { "filter": { "bool": { "should": [ { "term": { "state": "one" } }, { "term": { "state": "two" } } ] , "minimum_should_match": 3 } }, "should": [ { "match": { "message": "nice" } }, { "match": { "message": "something" } } ], "minimum_should_match": 2 } } }
+    compare_jsons(a, b)
+  end
+
+  def test_mimimum_should_match_2
+    a = @builder
+      .or_query('match', 'message', 'nice')
+      .set_query_minimum_should_match(2)
+      .build()
+    b = { "query": { "bool": { "should": { "match": { "message": "nice" } }  } } }
+    compare_jsons(a, b)
+  end
+
+  def test_mimimum_should_match_3
+    a = @builder
+      .or_query('match', 'message', 'nice')
+      .set_query_minimum_should_match(1)
+      .build()
+    b = { "query": { "bool": { "should": { "match": { "message": "nice" } } } } }
+    compare_jsons(a, b)
+  end
+
+  def test_mimimum_should_match_4
+    a = @builder.query('bool') do |b|
+      b.or_query('match', 'message', 'test')
+      b.or_query('match', 'message', 'something else')
+      b.set_query_minimum_should_match(1)
+    end.build
+    b = { "query": { "bool": { "should": [ { "match": { "message": "test" } }, { "match": { "message": "something else" } } ], "minimum_should_match": 1,  } } }
+    compare_jsons(a, b)
+  end
+
 end

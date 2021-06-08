@@ -7,7 +7,7 @@ module BodyBuilder
   class Builder
   
     attr_reader :filters, :queries, :raw_options, :sort_fields, :parent
-    attr_accessor :base_query, :size, :from
+    attr_accessor :base_query, :size, :from, :query_minimum_should_match, :filter_minimum_should_match
   
     # @param base_query [Hash] starting query definition
     # @param parent [Clause] parent clause when nested
@@ -68,81 +68,17 @@ module BodyBuilder
       @from = from
       self
     end
-  
-    def build
-      base_query = self.base_query.deep_transform_keys!{|k| k.to_sym}
-      query = Marshal.load(Marshal.dump(base_query))
 
-      base_query_is_bool = base_query[:query]&.key?(:bool)
-      
-      # Process queries and filters
-      filters_and_queries = {filters: @filters, queries: @queries}
-      
-      hash = filters_and_queries.inject({}) do |acum, (type, object)|
-        
-        to_merge = if !base_query_is_bool && (type == :queries && !self.has_filters? && only_one_and_clause?(type))
-          object[:and].first.build
-        else
-
-          is_simple_filter = type == :filters && 
-            (
-              only_one_and_clause?(type) ||
-              (object[:or].empty? && !self.has_queries? && !object.any?{|k, v| v.any?{|c| c.block }})
-            )
-          
-          mapping = if is_simple_filter
-            { and: :filter, not: :must_not }
-          else
-            { and: :must, or: :should, not: :must_not }
-          end
-
-          # build bool clause
-          object.inject({}) do |obj, (key, clauses)|
-            next obj if clauses.empty?
-  
-            hash = if clauses.size == 1# && !base_query_is_bool
-              clauses.first.build
-            else
-              clauses.map(&:build)
-            end
-
-            path = if parent
-              [mapping[key]]
-            elsif is_simple_filter || type == :queries
-              [:bool, mapping[key]]
-            else
-              [:bool, :filter, :bool, mapping[key]]
-            end
-
-            obj = obj.deep_merge(
-              path.reverse.inject(hash){|acum, key| {"#{key}".to_sym => acum } }
-            )
-            
-          end
-        end
-    
-        acum.deep_merge(to_merge)
-      end
-
-      raw_options.each do |option|
-        query[option[:key]] = option[:value]
-      end
-
-      # RETURN if nested (skip sort, size, from )
-      return hash if parent
-
-      query.deep_merge!({query: hash}) unless hash.empty?
-
-      query[:sort] = sort_fields unless sort_fields.empty?
-      query[:size] = @size unless @size.nil?
-      query[:from] = @from unless @from.nil?
-  
-      # _.set(clonedBody, 'aggs', aggregations)if @aggregations
-      # _.set(clonedBody, 'suggest', suggest)if @suggest
-  
-      query
+    def set_query_minimum_should_match(min, override: false)
+      self.query_minimum_should_match = min
+      self
     end
-  
+
+    def set_filter_minimum_should_match(min)
+      self.filter_minimum_should_match = min
+      self
+    end
+
     # return [Boolean] true if any filter clause is present
     def has_filters?(key=nil)
       [:and, :or, :not].any? do |k|
@@ -157,6 +93,103 @@ module BodyBuilder
         next if key && k != key
         !@queries[k].empty?
       end
+    end
+  
+    def build
+      query = Marshal.load(Marshal.dump(self.base_query)) #dup
+      query.deep_transform_keys!{|k| k.to_sym}
+      base_query_is_bool = query[:query]&.key?(:bool)
+
+      if query.key?(:query) && !base_query_is_bool
+        raise StandardError.new('cannot build query when base query root is not bool clause')
+      end
+      
+      # Process queries and filters
+      if !base_query_is_bool && !self.has_filters? && only_one_and_clause?(:queries)
+        query[:query] = self.queries[:and].first.build
+      else
+        {filters: @filters, queries: @queries}.each do |type, object|
+          
+          is_simple_filter = type == :filters && 
+            (
+              only_one_and_clause?(type) ||
+              (object[:or].empty? && !self.has_queries? && !object.any?{|k, v| v.any?{|c| c.block }})
+            )
+  
+          # build bool clause
+          object.each do |key, clauses|
+            next if clauses.empty?
+  
+            hash = clauses.map(&:build)
+            hash = hash.first if clauses.size == 1 # && !base_query_is_bool
+            
+            scope = if parent
+              #query
+              query[:query] ||= {}
+            elsif is_simple_filter || type == :queries
+              #query.bool
+              query[:query] ||= {}
+              query[:query][:bool] ||= {}
+            else
+              #query.bool.filter.bool
+              query[:query] ||= {}
+              query[:query][:bool] ||= {}
+              filter = query[:query][:bool][:filter] ||= {}
+              if filter.is_a? Array
+                h = {bool: {}}
+                filter.push(h)
+                h[:bool]
+              else
+                query[:query][:bool][:filter][:bool] ||= {}
+              end
+            end
+
+            mapping = if is_simple_filter
+              { and: :filter, not: :must_not }
+            else
+              { and: :must, or: :should, not: :must_not }
+            end
+
+            mapped_key = mapping[key]
+
+            # add or merge to
+            if scope.key?(mapped_key)
+              value = scope[mapped_key]
+              value = [value] unless value.is_a? Array
+              if hash.is_a?(Array)
+                value.concat(hash)
+              else
+                value.push(hash)
+              end
+            else
+              scope[mapped_key] = hash
+            end
+
+            if mapped_key == :should && scope[:should].is_a?(Array)
+              if type == :queries
+                scope[:minimum_should_match] = self.query_minimum_should_match unless self.query_minimum_should_match.nil?
+              else
+                scope[:minimum_should_match] = self.filter_minimum_should_match unless self.filter_minimum_should_match.nil?
+              end
+            end
+
+          end
+
+        end
+      end
+
+      raw_options.each do |option|
+        query[option[:key]] = option[:value]
+      end
+
+      # RETURN if nested (skip sort, size, from )
+      return query.key?(:query) ? query[:query] : query if parent
+
+      query[:sort] = sort_fields unless sort_fields.empty?
+      query[:size] = @size unless @size.nil?
+      query[:from] = @from unless @from.nil?
+  
+      query
     end
   
     private
