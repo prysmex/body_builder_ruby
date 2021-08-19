@@ -1,9 +1,20 @@
 module BodyBuilder
+  #
+  # This class is used by BodyBuilder::Builder class to create a query.
+  # It represents a unit of an elasticsearch 'clause' inside a query
+  #
   class Clause
 
     attr_accessor :type, :field, :value, :options, :block
     attr_reader :parent
   
+    # Initialization method
+    #
+    # @param [String] type examples: (terms, match, match_all, etc...) 
+    # @param [String] field name of the field
+    # @param [String, Integer, Array<String, Integer>] value to be used by query o filter
+    # @param [Hash] options used to support params in clause
+    # @param [Builder] parent <description>
     def initialize(type, field=nil, value=nil, options={}, parent=nil, &block)
       @type = type
       @field = field
@@ -13,6 +24,9 @@ module BodyBuilder
       @block = block
     end
   
+    # Builds the elasticsearch query clause
+    #
+    # @return [Hash] elasticsearch query clause
     def build
       hash = if @value
           {"#{@field}".to_sym => @value}
@@ -40,7 +54,6 @@ module BodyBuilder
         child_hash = child_hash[:bool] if child_hash.key?(:bool)
         hash.merge!(child_hash)
       end
-
     
       return {"#{@type}".to_sym => hash}
     end

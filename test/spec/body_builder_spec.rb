@@ -33,6 +33,15 @@ class HelperTest < Minitest::Test
     assert_respond_to @builder, :base_query
     assert_respond_to @builder, :raw_option
     assert_respond_to @builder, :sort_field
+
+    assert_respond_to @builder, :has_queries?
+    assert_respond_to @builder, :has_filters?
+
+    assert_respond_to @builder, :reset!
+    assert_respond_to @builder, :reset_queries!
+    assert_respond_to @builder, :reset_filters!
+    assert_respond_to @builder, :reset_raw_options!
+    assert_respond_to @builder, :reset_sort_fields!
   end
 
   def test_size
@@ -75,6 +84,51 @@ class HelperTest < Minitest::Test
     b = { "sort": [{id: 'asc'}] }
     compare_jsons(a, b)
   end
+
+  def test_has_queries?
+    assert_equal false, @builder.has_queries?
+    @builder.filter('match_all')
+    assert_equal false, @builder.has_queries?
+    @builder.query('match_all')
+    assert_equal true, @builder.has_queries?
+  end
+  
+  def test_has_filters?
+    assert_equal false, @builder.has_filters?
+    @builder.query('match_all')
+    assert_equal false, @builder.has_filters?
+    @builder.filter('match_all')
+    assert_equal true, @builder.has_filters?
+  end
+
+  def test_reset_queries!
+    @builder.query('match_all')
+    @builder.reset_queries!
+    assert_equal false, @builder.has_queries?
+  end
+
+  def test_reset_filters!
+    @builder.filter('match_all')
+    @builder.reset_filters!
+    assert_equal false, @builder.has_filters?
+  end
+
+  def test_reset_raw_options!
+    @builder.raw_option('size', 10)
+    assert_equal 1, @builder.raw_options.size
+    @builder.reset_raw_options!
+    assert_empty @builder.raw_options
+  end
+
+  def reset_sort_fields!
+    @builder.sort_field('id', 'asc')
+    assert_equal 1, @builder.sort_fields.size
+    @builder.reset_sort_fields!
+    assert_empty @builder.sort_fields
+  end
+
+  # def test_reset!
+  # end
 
   ######
   #ARGS#

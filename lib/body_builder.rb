@@ -4,51 +4,90 @@ require 'active_support/core_ext/hash/deep_merge'
 require 'active_support/core_ext/hash/keys'
 
 module BodyBuilder
+  #
+  # Used to create elasticsearch queries with a simple and predictible API.
+  # It is possible to create almost every possible elasticsearch query with
+  # this class.
+  #
+  # For examples, see the specs
+  #
   class Builder
   
     attr_reader :filters, :queries, :raw_options, :sort_fields, :parent
     attr_accessor :base_query, :size, :from, :query_minimum_should_match, :filter_minimum_should_match
-  
-    # @param base_query [Hash] starting query definition
-    # @param parent [Clause] parent clause when nested
+
+    # Initialize the builder instance
+    #
+    # @param [Hash] base_query starting query definition
+    # @param [Clause] parent the parent clause when nested
     def initialize(base_query: {}, parent: nil)
       @base_query = base_query
       @parent = parent
       reset!
     end
   
+    # Adds a *and* *filter* clause. For examples, see the specs
+    #
+    # @return [Builder] self
     def filter(*args, &block)
       _add_clause(true, :and, *args, &block)
     end
     alias_method :and_filter, :filter
   
+    # Adds a *or* *filter* clause. For examples, see the specs
+    #
+    # @return [Builder] self
     def or_filter(*args, &block)
       _add_clause(true, :or, *args, &block)
     end
   
+    # Adds a *not* *filter* clause. For examples, see the specs
+    #
+    # @return [Builder] self
     def not_filter(*args, &block)
       _add_clause(true, :not, *args, &block)
     end
   
+    # Adds a *and* *query* clause. For examples, see the specs
+    #
+    # @return [Builder] self
     def query(*args, &block)
       _add_clause(false, :and, *args, &block)
     end
     alias_method :and_query, :query
   
+    # Adds a *or* *query* clause. For examples, see the specs
+    #
+    # @return [Builder] self
     def or_query(*args, &block)
       _add_clause(false, :or, *args, &block)
     end
   
+    # Adds a *not* *query* clause. For examples, see the specs
+    #
+    # @return [Builder] self
     def not_query(*args, &block)
       _add_clause(false, :not, *args, &block)
     end
 
+    # Allows to add custom root level key to the built query
+    #
+    # @param [String, Symbol] key name of the key to set value to
+    # @param [String, Symbol, Hash, Array] value the value to set
+    # @return [Builder] self
     def raw_option(key, value)
       @raw_options << {key: key, value: value}
       self
     end
 
+    # Sets the field to sort by
+    #
+    # @param [String, Symbol] field name of the field
+    # @param [String] direction ('asc' or 'desc')
+    # @return [Builder] self
     def sort_field(field, direction = 'asc')
+      raise ArgumentError.new("direction must be 'asc' or 'desc', got '#{direction}'") unless ['desc', 'asc'].include?(direction)
+
       field = field.to_sym
       sort = sort_fields.find{|obj| obj.key?(field) }
       if sort
@@ -59,27 +98,47 @@ module BodyBuilder
       self
     end
 
+    # Sets the size key of the query
+    #
+    # @param [Integer] size
+    # @return [Builder] self
     def set_size(size)
       @size = size
       self
     end
 
+    # Sets the from key of the query
+    #
+    # @param [Integer] from
+    # @return [Builder] self
     def set_from(from)
       @from = from
       self
     end
 
-    def set_query_minimum_should_match(min, override: false)
-      self.query_minimum_should_match = min
+    # Sets elasticsearch's *minimum_should_match* value on a *query* context
+    #
+    # @param [Integer] value
+    # @return [Builder] self
+    def set_query_minimum_should_match(value)
+      self.query_minimum_should_match = value
       self
     end
 
-    def set_filter_minimum_should_match(min)
-      self.filter_minimum_should_match = min
+    # Sets elasticsearch's *minimum_should_match* value on a *filter* context
+    #
+    # @param [Integer] value
+    # @return [Builder] self
+    def set_filter_minimum_should_match(value)
+      self.filter_minimum_should_match = value
       self
     end
 
-    # return [Boolean] true if any filter clause is present
+    # Checks if builder has any *filter* clauses. If a key
+    # is passed as an argument, it ignores all other keys.
+    #
+    # @param [Symbol] key (:and, :or, :not)
+    # @return [Boolean] true if any filter clause is present
     def has_filters?(key=nil)
       [:and, :or, :not].any? do |k|
         next if key && k != key
@@ -87,7 +146,11 @@ module BodyBuilder
       end
     end
   
-    # return [Boolean] true if any query clause is present
+    # Checks if builder has any *query* clauses. If a key
+    # is passed as an argument, it ignores all other keys.
+    #
+    # @param [Symbol] key (:and, :or, :not)
+    # @return [Boolean] true if any query clause is present
     def has_queries?(key=nil)
       [:and, :or, :not].any? do |k|
         next if key && k != key
@@ -95,6 +158,9 @@ module BodyBuilder
       end
     end
   
+    # Builds the elasticsearch query
+    #
+    # @return [Hash] built elasticsearch query
     def build
       query = Marshal.load(Marshal.dump(self.base_query)) #dup
       query.deep_transform_keys!{|k| k.to_sym}
@@ -191,20 +257,10 @@ module BodyBuilder
   
       query
     end
-  
-    private
-  
-    # @param type [String] Query type.
-    # @param field [String, Hash] Field to query or complete query clause.
-    # @param value [String, Hash] Query term or inner clause.
-    # @param options [Hash] (optional) Additional options for the query clause.
-    def _add_clause(is_filter, key, type, field=nil, value=nil, options={}, &block)
-      obj = is_filter ? self.filters : self.queries
-      obj[key] << Clause.new(type, field, value, options, self, &block)
-      self
-    end
 
-    # Calls all resetters
+    # Calls all reset methods and sets from and size to nil
+    #
+    # @return [void]
     def reset!
       reset_queries!
       reset_filters!
@@ -214,7 +270,9 @@ module BodyBuilder
       size = nil
     end
 
-    # Empties queries
+    # Empties all *query* caluses from the builder
+    #
+    # @return [Hash] queries hash
     def reset_queries!
       @queries = {
         and: [],
@@ -223,7 +281,9 @@ module BodyBuilder
       }
     end
 
-    # Empties filters
+    # Empties all *filter* clauses from the builder
+    #
+    # @return [Hash] filters hash
     def reset_filters!
       @filters = {
         and: [],
@@ -233,15 +293,41 @@ module BodyBuilder
     end
 
     # Empties raw_options
+    #
+    # @return [void]
     def reset_raw_options!
       @raw_options = []
     end
 
     # Empties sort fields
+    #
+    # @return [void]
     def reset_sort_fields!
       @sort_fields = []
     end
+  
+    private
 
+    # Adds a clause to the builder
+    #
+    # @param [Boolean] is_filter true when *filter* context
+    # @param [Symbol] key one of (:and, :or, :not)
+    # @param [String] type Query type
+    # @param [String, Hash] field Field to query or complete query clause
+    # @param [String, Hash] value Query term or inner clause
+    # @param [Hash] options (optional)
+    # @param &block (optional)
+    # @return [Builder] builder with added clause
+    def _add_clause(is_filter, key, type, field=nil, value=nil, options={}, &block)
+      obj = is_filter ? self.filters : self.queries
+      obj[key] << Clause.new(type, field, value, options, self, &block)
+      self
+    end
+
+    # Returns true if only 1 clause exists and its key is :and
+    #
+    # @param [Symbol] type (:filters or :queries)
+    # @return [Boolean]
     def only_one_and_clause?(type)
       object = type == :filters ? self.filters : self.queries
       object[:and].length == 1 && object[:or].empty? && object[:not].empty?
