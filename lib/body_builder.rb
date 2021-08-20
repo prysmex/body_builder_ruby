@@ -86,7 +86,7 @@ module BodyBuilder
     # @param [String] direction ('asc' or 'desc')
     # @return [Builder] self
     def sort_field(field, direction = 'asc')
-      raise ArgumentError.new("direction must be 'asc' or 'desc', got '#{direction}'") unless ['desc', 'asc'].include?(direction)
+      raise ArgumentError.new("direction must be 'asc' or 'desc', got '#{direction}'") unless ['desc', 'asc'].include?(direction.to_s.downcase)
 
       field = field.to_sym
       sort = sort_fields.find{|obj| obj.key?(field) }
