@@ -140,9 +140,9 @@ module BodyBuilder
     # @param [Symbol] key (:and, :or, :not)
     # @return [Boolean] true if any filter clause is present
     def has_filters?(key=nil)
-      [:and, :or, :not].any? do |k|
+      @filters.any? do |k,v|
         next if key && k != key
-        !@filters[k].empty?
+        !v.empty?
       end
     end
   
@@ -152,9 +152,9 @@ module BodyBuilder
     # @param [Symbol] key (:and, :or, :not)
     # @return [Boolean] true if any query clause is present
     def has_queries?(key=nil)
-      [:and, :or, :not].any? do |k|
+      @queries.any? do |k,v|
         next if key && k != key
-        !@queries[k].empty?
+        !v.empty?
       end
     end
   
@@ -162,6 +162,11 @@ module BodyBuilder
     #
     # @return [Hash] built elasticsearch query
     def build
+      # TODO should this validation be recursive and optional?
+      if parent&.is_filter && has_queries?
+        raise StandardError.new('cannot query when parent is filter')
+      end
+
       query = Marshal.load(Marshal.dump(self.base_query)) #dup
       query.deep_transform_keys!{|k| k.to_sym}
       base_query_is_bool = query[:query]&.key?(:bool)
@@ -169,35 +174,38 @@ module BodyBuilder
       if query.key?(:query) && !base_query_is_bool
         raise StandardError.new('cannot build query when base query root is not bool clause')
       end
-      
+
+      is_simple_filter = (
+        only_one_and_clause?(:filters) ||
+        (
+          filters[:or].empty? &&
+          !self.has_queries? &&
+          !filters.any?{|_key, clauses| clauses.any?{|c| c.block }}
+        )
+      )
+
       # Process queries and filters
-      if !base_query_is_bool && !self.has_filters? && only_one_and_clause?(:queries)
+      if !parent && !base_query_is_bool && !self.has_filters? && only_one_and_clause?(:queries)
         query[:query] = self.queries[:and].first.build
       else
         {filters: @filters, queries: @queries}.each do |type, object|
-          
-          is_simple_filter = type == :filters && 
-            (
-              only_one_and_clause?(type) ||
-              (object[:or].empty? && !self.has_queries? && !object.any?{|k, v| v.any?{|c| c.block }})
-            )
-  
+          current_is_simple_filter = is_simple_filter && type == :filters
           # build bool clause
           object.each do |key, clauses|
             next if clauses.empty?
-  
-            hash = clauses.map(&:build)
-            hash = hash.first if clauses.size == 1 # && !base_query_is_bool
             
-            scope = if parent
-              #query
+            built_clauses = clauses.map(&:build)
+            built_clauses = built_clauses.first if clauses.size == 1 # && !base_query_is_bool
+            
+            scope = if parent&.is_filter
+              # query
               query[:query] ||= {}
-            elsif is_simple_filter || type == :queries
-              #query.bool
+            elsif current_is_simple_filter || type == :queries
+              # query.bool
               query[:query] ||= {}
               query[:query][:bool] ||= {}
             else
-              #query.bool.filter.bool
+              # query.bool.filter.bool
               query[:query] ||= {}
               query[:query][:bool] ||= {}
               filter = query[:query][:bool][:filter] ||= {}
@@ -210,10 +218,18 @@ module BodyBuilder
               end
             end
 
-            mapping = if is_simple_filter
-              { and: :filter, not: :must_not }
+            mapping = if current_is_simple_filter
+              {
+                and: :filter,
+                or: nil,
+                not: :must_not
+              }
             else
-              { and: :must, or: :should, not: :must_not }
+              {
+                and: :must,
+                or: :should,
+                not: :must_not
+              }
             end
 
             mapped_key = mapping[key]
@@ -222,15 +238,16 @@ module BodyBuilder
             if scope.key?(mapped_key)
               value = scope[mapped_key]
               value = [value] unless value.is_a? Array
-              if hash.is_a?(Array)
-                value.concat(hash)
+              if built_clauses.is_a?(Array)
+                value.concat(built_clauses)
               else
-                value.push(hash)
+                value.push(built_clauses)
               end
             else
-              scope[mapped_key] = hash
+              scope[mapped_key] = built_clauses
             end
 
+            # add minimum_should_match for query or filter if more than 1 clause
             if mapped_key == :should && scope[:should].is_a?(Array)
               if type == :queries
                 scope[:minimum_should_match] = self.query_minimum_should_match unless self.query_minimum_should_match.nil?
@@ -320,7 +337,7 @@ module BodyBuilder
     # @return [Builder] builder with added clause
     def _add_clause(is_filter, key, type, field=nil, value=nil, options={}, &block)
       obj = is_filter ? self.filters : self.queries
-      obj[key] << Clause.new(type, field, value, options, self, &block)
+      obj[key] << Clause.new(type, is_filter, field, value, self, options, &block)
       self
     end
 

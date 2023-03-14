@@ -6,3 +6,6 @@
 /pkg/
 /spec/reports/
 /tmp/
+
+# Ignore Byebug command history file.
+.byebug_history

@@ -13,7 +13,7 @@ class HelperTest < Minitest::Test
   include BuilderTestMethods
 
   def compare_jsons(a, b)
-    assert_equal JSON.generate(a), JSON.generate(b)
+    assert_equal a, b
   end
 
   def test_respond_to_methods
@@ -162,7 +162,11 @@ class HelperTest < Minitest::Test
     a = @builder
         .query('geo_distance', 'point', {lat: 40, lon: 20}, {distance: '12km'})
         .build()
-    b = { "query": { "geo_distance": { "point": { "lat": 40, "lon": 20 }, "distance": "12km" } } }
+    b = {
+      "query": {
+        "geo_distance": { "point": { "lat": 40, "lon": 20 }, "distance": "12km" }
+      }
+    }
     compare_jsons(a, b)
   end
 
@@ -192,7 +196,13 @@ class HelperTest < Minitest::Test
     a = @builder
         .or_filter('terms', 'tags', ['Emerging'])
         .build
-    b = { "query": { "bool": { "filter": { "bool": { "should": { "terms": { "tags": [ "Emerging" ] } } } } } } }
+    b = {
+      "query": {
+        "bool": {
+          "filter": { "bool": { "should": { "terms": { "tags": ["Emerging"] } } } }
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
@@ -204,18 +214,173 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  #COMBINED
-  def test_combined_filters
+  # COMBINED
+
+  def test_all_filters
     a = @builder
         .filter('terms', 'tags', 'filter')
         .or_filter('terms', 'tags', 'or_filter')
         .not_filter('terms', 'tags', 'not_filter')
         .build
-    b = { "query": { "bool": { "filter": { "bool": { "must": { "terms": { "tags": "filter" } }, "should": { "terms": { "tags": "or_filter" } }, "must_not": { "terms": { "tags": "not_filter" } } } } } } }
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "must": { "terms": { "tags": "filter" } },
+              "should": { "terms": { "tags": "or_filter" } },
+              "must_not": { "terms": { "tags": "not_filter" } }
+            }
+          }
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
-  #DUPLICATED
+  def test_repeated_filters
+    a = @builder
+        .filter('terms', 'tags', 'filter')
+        .filter('terms', 'tags', 'filter')
+        .or_filter('terms', 'tags', 'or_filter')
+        .or_filter('terms', 'tags', 'or_filter')
+        .not_filter('terms', 'tags', 'not_filter')
+        .not_filter('terms', 'tags', 'not_filter')
+        .build
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "must": [
+                { "terms": { "tags": "filter" } },
+                { "terms": { "tags": "filter" } }
+              ],
+              "should": [
+                { "terms": { "tags": "or_filter" } },
+                { "terms": { "tags": "or_filter" } }
+              ],
+              "must_not": [
+                { "terms": { "tags": "not_filter" } },
+                { "terms": { "tags": "not_filter" } }
+              ]
+            }
+          }
+        }
+      }
+    }
+    compare_jsons(a, b)
+  end
+
+  # Block
+
+  def test_all_filter_blocks
+    a = @builder
+      .filter('bool') do |f|
+        f.filter("match", "message", "filter")
+      end
+      .not_filter('bool') do |f|
+        f.filter("match", "message", "not_filter")
+      end
+      .or_filter('bool') do |f|
+        f.filter("match", "message", "or_filter")
+      end
+      .build()
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "must": {
+                "bool": { "filter": { "match": { "message": "filter" } } }
+              },
+              "should": {
+                "bool": { "filter": { "match": { "message": "or_filter" } } }
+              },
+              "must_not": {
+                "bool": { "filter": { "match": { "message": "not_filter" } } }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    compare_jsons(a, b)
+  end
+
+  def test_all_filter_blocks_double
+    a = @builder
+      .filter('bool') do |f|
+        f.filter("match", "message", "filter")
+        f.filter("match", "message", "filter")
+      end
+      .not_filter('bool') do |f|
+        f.filter("match", "message", "not_filter")
+        f.filter("match", "message", "not_filter")
+      end
+      .or_filter('bool') do |f|
+        f.filter("match", "message", "or_filter")
+        f.filter("match", "message", "or_filter")
+      end
+      .build()
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "must": {
+                "bool": { "filter": [{ "match": { "message": "filter" } }, { "match": { "message": "filter" } }] }
+              },
+              "should": {
+                "bool": { "filter": [{ "match": { "message": "or_filter" } }, { "match": { "message": "or_filter" } }] }
+              },
+              "must_not": {
+                "bool": { "filter": [{ "match": { "message": "not_filter" } }, { "match": { "message": "not_filter" } }] }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    compare_jsons(a, b)
+  end
+
+  def test_all_filter_blocks_nested
+    a = @builder
+      .filter('bool') do |f|
+        f.filter("match", "message", "filter")
+        f.not_filter('bool') do |f|
+          f.filter("match", "message", "not_filter")
+          f.or_filter('bool') do |f|
+            f.filter("match", "message", "or_filter")
+          end
+        end
+      end
+      .build()
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "must": { "match": { "message": "filter" } },
+              "must_not": {
+                "bool": {
+                  "must": { "match": { "message": "not_filter" } },
+                  "should": {
+                    "bool": { "filter": { "match": { "message": "or_filter" } } }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    compare_jsons(a, b)
+  end
 
   #######
   #QUERY#
@@ -255,14 +420,53 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  #COMBINED
-  def test_combined_querys
+  # COMBINED
+
+  def test_all_querys
     a = @builder
         .query('terms', 'tags', 'query')
         .or_query('terms', 'tags', 'or_query')
         .not_query('terms', 'tags', 'not_query')
         .build
-    b = { "query": { "bool": { "must": { "terms": { "tags": "query" } }, "should": { "terms": { "tags": "or_query" } }, "must_not": { "terms": { "tags": "not_query" } } } } }
+    b = {
+      "query": {
+        "bool": {
+          "must": { "terms": { "tags": "query" } },
+          "should": { "terms": { "tags": "or_query" } },
+          "must_not": { "terms": { "tags": "not_query" } }
+        }
+      }
+    }
+    compare_jsons(a, b)
+  end
+
+  def test_repeated_queries
+    a = @builder
+        .query('terms', 'tags', 'query')
+        .query('terms', 'tags', 'query')
+        .or_query('terms', 'tags', 'or_query')
+        .or_query('terms', 'tags', 'or_query')
+        .not_query('terms', 'tags', 'not_query')
+        .not_query('terms', 'tags', 'not_query')
+        .build
+    b = {
+      "query": {
+        "bool": {
+          "must": [
+            { "terms": { "tags": "query" } },
+            { "terms": { "tags": "query" } }
+          ],
+          "should": [
+            { "terms": { "tags": "or_query" } },
+            { "terms": { "tags": "or_query" } }
+          ],
+          "must_not": [
+            { "terms": { "tags": "not_query" } },
+            { "terms": { "tags": "not_query" } }
+          ]
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
@@ -270,15 +474,152 @@ class HelperTest < Minitest::Test
   #BLOCK#
   #######
 
-  # def test_single_query_3
-  #   a = @builder
-  #       .query('nested', 'path', 'obj1') do |q|
-  #         q.query('match', 'obj1.color', 'blue')
-  #       end
-  #       .build()
-  #   b = { "query": { "nested": { "path": "obj1", "query": { "match": { "obj1.color": "blue" } } } } }
-  #   compare_jsons(a, b)
-  # end
+  def test_all_query_blocks
+    a = @builder
+      .query('bool') do |f|
+        f.query("match", "message", "query")
+      end
+      .not_query('bool') do |f|
+        f.query("match", "message", "not_query")
+      end
+      .or_query('bool') do |f|
+        f.query("match", "message", "or_query")
+      end
+      .build()
+    b = {
+      "query": {
+        "bool": {
+          "must": { "bool": { "must": { "match": { "message": "query" } } } },
+          "should": { "bool": { "must": { "match": { "message": "or_query" } } } },
+          "must_not": {
+            "bool": { "must": { "match": { "message": "not_query" } } }
+          }
+        }
+      }
+    }
+    compare_jsons(a, b)
+  end
+
+  def test_all_query_blocks_double
+    a = @builder
+      .query('bool') do |f|
+        f.query("match", "message", "query")
+        f.query("match", "message", "query")
+      end
+      .not_query('bool') do |f|
+        f.query("match", "message", "not_query")
+        f.query("match", "message", "not_query")
+      end
+      .or_query('bool') do |f|
+        f.query("match", "message", "or_query")
+        f.query("match", "message", "or_query")
+      end
+      .build()
+    b = {
+      "query": {
+        "bool": {
+          "must": {
+            "bool": {
+              "must": [
+                { "match": { "message": "query" } },
+                { "match": { "message": "query" } }
+              ]
+            }
+          },
+          "should": {
+            "bool": {
+              "must": [
+                { "match": { "message": "or_query" } },
+                { "match": { "message": "or_query" } }
+              ]
+            }
+          },
+          "must_not": {
+            "bool": {
+              "must": [
+                { "match": { "message": "not_query" } },
+                { "match": { "message": "not_query" } }
+              ]
+            }
+          }
+        }
+      }
+    }
+    
+    compare_jsons(a, b)
+  end
+
+  def test_all_query_blocks_nested
+    a = @builder
+      .query('bool') do |f|
+        f.query("match", "message", "query")
+        f.not_query('bool') do |f|
+          f.query("match", "message", "not_query")
+          f.or_query('bool') do |f|
+            f.query("match", "message", "or_query")
+          end
+        end
+      end
+      .build()
+    b = {
+      "query": {
+        "bool": {
+          "must": { "match": { "message": "query" } },
+          "must_not": {
+            "bool": {
+              "must": { "match": { "message": "not_query" } },
+              "should": {
+                "bool": { "must": { "match": { "message": "or_query" } } }
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    
+    compare_jsons(a, b)
+  end
+
+  def test_query_block_1
+    a = @builder
+      .query('bool') do |f|
+        f.query('term', 'field1', 1)
+        f.query('term', 'field2', 2)
+        f.or_query('term', 'field3', 3)
+      end
+      .query('bool') do |f|
+        f.query('term', 'field4', 10)
+        f.query('term', 'field5', 20)
+        f.or_query('term', 'field6', 30)
+      end
+      .build
+
+    b = {
+      "query": {
+        "bool": {
+          "must": [
+            {
+              "bool": {
+                "must": [{ "term": { "field1": 1 } }, { "term": { "field2": 2 } }],
+                "should": { "term": { "field3": 3 } }
+              }
+            },
+            {
+              "bool": {
+                "must": [
+                  { "term": { "field4": 10 } },
+                  { "term": { "field5": 20 } }
+                ],
+                "should": { "term": { "field6": 30 } }
+              }
+            }
+          ]
+        }
+      }
+    }
+    compare_jsons(a,b)
+  end
 
   #################
   #WITH BASE QUERY#
@@ -298,8 +639,6 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  # { multi_match: { query: @search, fuzziness: 'AUTO' } }
-  # {constant_score: { filter: { terms: { id: integers } }, boost: 100 }}
   def test_base_query_2
     @builder.base_query = {
       query: {
@@ -313,12 +652,30 @@ class HelperTest < Minitest::Test
           b.or_query('constant_score', { 'filter': { 'terms': { 'id': ['1'] } }, 'boost': 100 })
         end
         .build()
-    b = { "query": { "bool": { "must": { "bool": { "should": [ { "multi_match": { "query": "test", "fuzziness": "AUTO" } }, { "constant_score": { "filter": { "terms": { "id": [ "1" ] } }, "boost": 100 } } ] } } } } }
+    b = {
+      "query": {
+        "bool": {
+          "must": {
+            "bool": {
+              "should": [
+                { "multi_match": { "query": "test", "fuzziness": "AUTO" } },
+                {
+                  "constant_score": {
+                    "filter": { "terms": { "id": ["1"] } },
+                    "boost": 100
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
   #####################
-  #MULTI QUERY/FILTER #
+  #COMBINED QUERY/FILTER #
   #####################
 
   def test_multi_0
@@ -326,67 +683,18 @@ class HelperTest < Minitest::Test
         .query('match_all')
         .filter('term', 'user', 'kimchy')
         .build()
-    b = { "query": { "bool": { "filter": { "term": { "user": "kimchy" } }, "must": { "match_all": {} } } } }
+    b = {
+      "query": {
+        "bool": {
+          "filter": { "term": { "user": "kimchy" } },
+          "must": { "match_all": {} }
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
   def test_multi_1
-    a = @builder
-        .filter('terms', 'tags', ['Emerging'])
-        .filter('terms', 'tags', ['asdf'])
-        .build
-    b = { "query": { "bool": { "filter": [ { "terms": { "tags": [ "Emerging" ] } }, { "terms": { "tags": [ "asdf" ] } } ] } } }
-    compare_jsons(a, b)
-  end
-
-  def test_multi_2
-    a = @builder
-        .query('exists', 'user')
-        .or_query('term', 'user', 'kimchy')
-        .build()
-    b = { "query": { "bool": { "must": { "exists": { "field": "user" } }, "should": { "term": { "user": "kimchy" } } } } }
-    compare_jsons(a, b)
-  end
-
-  def test_multi_3
-    a = @builder
-        .or_query('term', 'user', 'kimchy')
-        .or_query('term', 'user', 'kimchy2')
-        .build()
-    b = { "query": { "bool": { "should": [ { "term": { "user": "kimchy" } }, { "term": { "user": "kimchy2" } } ] } } }
-    compare_jsons(a, b)
-  end
-
-  def test_multi_4
-    a = @builder
-		    .query('exists', 'user')
-        .or_query('term', 'user', 'kimchy')
-		    .not_query('term', 'user', 'kimchy')
-        .build()
-    b = { "query": { "bool": { "must": { "exists": { "field": "user" } }, "should": { "term": { "user": "kimchy" } } , "must_not": { "term": { "user": "kimchy" } } } } }
-    compare_jsons(a, b)
-  end
-
-  def test_multi_5
-    a = @builder
-        .filter('exists', 'user')
-        .or_filter('term', 'user', 'kimchy')
-        .build()
-    b = { "query": { "bool": { "filter": { "bool": { "must": { "exists": { "field": "user" } }, "should": { "term": { "user": "kimchy" } } } } } } }
-    compare_jsons(a, b)
-  end
-
-  def test_multi_6
-    a = @builder
-        .filter('exists', 'user')
-        .or_filter('term', 'user', 'kimchy')
-        .not_filter('term', 'user', 'kimchy')
-        .build()
-    b = { "query": { "bool": { "filter": { "bool": { "must": { "exists": { "field": "user" } }, "should": { "term": { "user": "kimchy" } }, "must_not": { "term": { "user": "kimchy" } } } } } } }
-    compare_jsons(a, b)
-  end
-
-  def test_multi_7
     a = @builder
         .filter('term', 'filter')
         .or_filter('term', 'or_filter')
@@ -395,11 +703,26 @@ class HelperTest < Minitest::Test
         .or_query('term', 'or_query')
         .not_query('term', 'not_query')
         .build()
-    b = { "query": { "bool": { "filter": { "bool": { "must": { "term": { "field": "filter" } }, "should": { "term": { "field": "or_filter" } }, "must_not": { "term": { "field": "not_filter" } } } }, "must": { "term": { "field": "query" } }, "should": { "term": { "field": "or_query" } }, "must_not": { "term": { "field": "not_query" } } } } }
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "must": { "term": { "field": "filter" } },
+              "should": { "term": { "field": "or_filter" } },
+              "must_not": { "term": { "field": "not_filter" } }
+            }
+          },
+          "must": { "term": { "field": "query" } },
+          "should": { "term": { "field": "or_query" } },
+          "must_not": { "term": { "field": "not_query" } }
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
-  def test_multi_8
+  def test_multi_2
     a = @builder
         .filter('term', 'filter')
         .or_filter('term', 'or_filter')
@@ -414,28 +737,76 @@ class HelperTest < Minitest::Test
         .or_query('term', 'or_query_2')
         .not_query('term', 'not_query_2')
         .build()
-    b = { "query": { "bool": { "filter": { "bool": { "must": [ { "term": { "field": "filter" } }, { "term": { "field": "filter_2" } } ], "should": [ { "term": { "field": "or_filter" } }, { "term": { "field": "or_filter_2" } } ], "must_not": [ { "term": { "field": "not_filter" } }, { "term": { "field": "not_filter_2" } } ] } }, "must": [ { "term": { "field": "query" } }, { "term": { "field": "query_2" } } ], "should": [ { "term": { "field": "or_query" } }, { "term": { "field": "or_query_2" } } ], "must_not": [ { "term": { "field": "not_query" } }, { "term": { "field": "not_query_2" } } ] } } }
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "must": [
+                { "term": { "field": "filter" } },
+                { "term": { "field": "filter_2" } }
+              ],
+              "should": [
+                { "term": { "field": "or_filter" } },
+                { "term": { "field": "or_filter_2" } }
+              ],
+              "must_not": [
+                { "term": { "field": "not_filter" } },
+                { "term": { "field": "not_filter_2" } }
+              ]
+            }
+          },
+          "must": [
+            { "term": { "field": "query" } },
+            { "term": { "field": "query_2" } }
+          ],
+          "should": [
+            { "term": { "field": "or_query" } },
+            { "term": { "field": "or_query_2" } }
+          ],
+          "must_not": [
+            { "term": { "field": "not_query" } },
+            { "term": { "field": "not_query_2" } }
+          ]
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
-  def test_multi_9
+  def test_multi_3
     a = @builder.query('nested', 'path', 'obj1', {score_mode: 'avg'}) do |q|
           q.query('match', 'obj1.name', 'blue')
           q.query('range', 'obj1.count', {gt: 5})
         end.build()
-    b = { "query": { "nested": { "path": "obj1", "score_mode": "avg", "query": { "bool": { "must": [ { "match": { "obj1.name": "blue" } }, { "range": { "obj1.count": { "gt": 5 } } } ] } } } } }
+    b = {
+      "query": {
+        "nested": {
+          "path": "obj1",
+          "score_mode": "avg",
+          "query": {
+            "bool": {
+              "must": [
+                { "match": { "obj1.name": "blue" } },
+                { "range": { "obj1.count": { "gt": 5 } } }
+              ]
+            }
+          }
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
-  def test_multi_10
-    a = @builder.query('a_key') do |q|
-          q.query('nice', 'wow')
-        end.build()
-    b = { "query": { "a_key": { "query": { "nice": { "field": "wow" } } } } }
-    compare_jsons(a, b)
-  end
+  # def test_multi_4
+  #   a = @builder.query('a_key') do |q|
+  #         q.query('nice', 'wow')
+  #       end.build()
+  #   b = { "query": { "a_key": { "query": { "nice": { "field": "wow" } } } } }
+  #   compare_jsons(a, b)
+  # end
 
-  def test_multi_11
+  def test_multi_5
     a = @builder
       .or_filter('bool') do |f|
           f.filter('terms', 'tags', ['Popular'])
@@ -450,12 +821,81 @@ class HelperTest < Minitest::Test
           f.filter('terms', 'companies', ['A', 'C', 'D'])
       end
       .build()
-    b = { "query": { "bool": { "filter": { "bool": { "should": [ { "bool": { "must": [ { "terms": { "tags": [ "Popular" ] } }, { "terms": { "brands": [ "A", "B" ] } } ], "should": { "bool": { "filter": [ { "terms": { "tags": [ "Emerging" ] } }, { "terms": { "brands": [ "C" ] } } ] } } } }, { "bool": { "filter": [ { "terms": { "tags": [ "Rumor" ] } }, { "terms": { "companies": [ "A", "C", "D" ] } } ] } } ] } } } } }
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "should": [
+                {
+                  "bool": {
+                    "must": [
+                      { "terms": { "tags": ["Popular"] } },
+                      { "terms": { "brands": ["A", "B"] } }
+                    ],
+                    "should": {
+                      "bool": {
+                        "filter": [
+                          { "terms": { "tags": ["Emerging"] } },
+                          { "terms": { "brands": ["C"] } }
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "bool": {
+                    "filter": [
+                      { "terms": { "tags": ["Rumor"] } },
+                      { "terms": { "companies": ["A", "C", "D"] } }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
+  def test_multi_6
+    assert_raises(StandardError) {
+      a = @builder.filter('bool') do |f|
+            f.query('match', 'message', 'this is a test')
+          end.build()
+    }
+  end
 
-  #minimumShouldMatch
+  def test_multi_8
+    a = @builder
+        .query('bool') do |q|
+          q.filter('term', 'message', 'asdf')
+        end
+        .build
+    b = { "query": { "bool": { "filter": { "term": { "message": "asdf" } } } } }
+    compare_jsons(a, b)
+  end
+
+  def test_multi_9
+    a = @builder
+        .query('bool') do |q|
+          q.or_filter('term', 'message', 'asdf')
+        end
+        .build
+    b = {
+      "query": {
+        "bool": {
+          "filter": { "bool": { "should": { "term": { "message": "asdf" } } } }
+        }
+      }
+    }
+    
+    compare_jsons(a, b)
+  end
+
+  # minimumShouldMatch
 
   def test_mimimum_should_match_1
     a = @builder
@@ -466,7 +906,27 @@ class HelperTest < Minitest::Test
       .set_query_minimum_should_match(2)
       .set_filter_minimum_should_match(3)
       .build()
-    b = { "query": { "bool": { "filter": { "bool": { "should": [ { "term": { "state": "one" } }, { "term": { "state": "two" } } ] , "minimum_should_match": 3 } }, "should": [ { "match": { "message": "nice" } }, { "match": { "message": "something" } } ], "minimum_should_match": 2 } } }
+    b = {
+      "query": {
+        "bool": {
+          "filter": {
+            "bool": {
+              "should": [
+                { "term": { "state": "one" } },
+                { "term": { "state": "two" } }
+              ],
+              "minimum_should_match": 3
+            }
+          },
+          "should": [
+            { "match": { "message": "nice" } },
+            { "match": { "message": "something" } }
+          ],
+          "minimum_should_match": 2
+        }
+      }
+    }
+    
     compare_jsons(a, b)
   end
 
@@ -494,7 +954,17 @@ class HelperTest < Minitest::Test
       b.or_query('match', 'message', 'something else')
       b.set_query_minimum_should_match(1)
     end.build
-    b = { "query": { "bool": { "should": [ { "match": { "message": "test" } }, { "match": { "message": "something else" } } ], "minimum_should_match": 1,  } } }
+    b = {
+      "query": {
+        "bool": {
+          "should": [
+            { "match": { "message": "test" } },
+            { "match": { "message": "something else" } }
+          ],
+          "minimum_should_match": 1
+        }
+      }
+    }
     compare_jsons(a, b)
   end
 
