@@ -30,7 +30,7 @@ module BodyBuilder
     #
     # @return [Hash] elasticsearch query clause
     def build
-      hash = if @value
+      hash = if !@value.nil?
           {"#{@field}".to_sym => @value}
         elsif @field.is_a? Hash
           @field

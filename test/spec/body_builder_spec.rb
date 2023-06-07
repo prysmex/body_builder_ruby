@@ -176,6 +176,14 @@ class HelperTest < Minitest::Test
 
   # SINGLES
 
+  def test_single_filter_boolean
+    a = @builder
+        .filter('term', 'active', false)
+        .build
+    b = { "query": { "bool": { "filter": { "term": { "active": false } } } } }
+    compare_jsons(a, b)
+  end
+
   def test_single_filter
     a = @builder
         .filter('terms', 'tags', ['Emerging'])

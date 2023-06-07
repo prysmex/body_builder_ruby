@@ -1,13 +1,13 @@
 PATH
   remote: .
   specs:
-    body_builder (0.1.6)
+    body_builder (0.1.7)
       activesupport (~> 6)
 
 GEM
   remote: https://rubygems.org/
   specs:
-    activesupport (6.1.7)
+    activesupport (6.1.7.3)
       concurrent-ruby (~> 1.0, >= 1.0.2)
       i18n (>= 1.6, < 2)
       minitest (>= 5.1)
@@ -16,8 +16,8 @@ GEM
     ansi (1.5.0)
     builder (3.2.4)
     byebug (9.1.0)
-    concurrent-ruby (1.1.9)
-    i18n (1.12.0)
+    concurrent-ruby (1.2.2)
+    i18n (1.14.1)
       concurrent-ruby (~> 1.0)
     minitest (5.14.4)
     minitest-reporters (1.4.3)
@@ -27,9 +27,9 @@ GEM
       ruby-progressbar
     rake (13.0.6)
     ruby-progressbar (1.11.0)
-    tzinfo (2.0.5)
+    tzinfo (2.0.6)
       concurrent-ruby (~> 1.0)
-    zeitwerk (2.6.0)
+    zeitwerk (2.6.8)
 
 PLATFORMS
   ruby
