@@ -1,6 +1,6 @@
 require 'test_helper'
 require 'json'
-require 'byebug'
+require 'debug'
 
 module BuilderTestMethods
   def setup
