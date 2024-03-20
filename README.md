@@ -178,8 +178,8 @@ BodyBuilder::Builder.new
 
 ### Other methods
 
-- `has_queries?`
-- `has_filters?`
+- `queries?`
+- `filters?`
 
 ### Reset
 

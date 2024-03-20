@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require 'body_builder/version'
 require 'body_builder/clause'
 require 'active_support/core_ext/hash/deep_merge'
@@ -12,7 +14,7 @@ module BodyBuilder
   # For examples, see the specs
   #
   class Builder
-  
+
     attr_reader :filters, :queries, :raw_options, :sort_fields, :parent
     attr_accessor :base_query, :size, :from, :query_minimum_should_match, :filter_minimum_should_match
 
@@ -25,44 +27,44 @@ module BodyBuilder
       @parent = parent
       reset!
     end
-  
+
     # Adds a *and* *filter* clause. For examples, see the specs
     #
     # @return [Builder] self
     def filter(*args, &block)
       _add_clause(true, :and, *args, &block)
     end
-    alias_method :and_filter, :filter
-  
+    alias and_filter filter
+
     # Adds a *or* *filter* clause. For examples, see the specs
     #
     # @return [Builder] self
     def or_filter(*args, &block)
       _add_clause(true, :or, *args, &block)
     end
-  
+
     # Adds a *not* *filter* clause. For examples, see the specs
     #
     # @return [Builder] self
     def not_filter(*args, &block)
       _add_clause(true, :not, *args, &block)
     end
-  
+
     # Adds a *and* *query* clause. For examples, see the specs
     #
     # @return [Builder] self
     def query(*args, &block)
       _add_clause(false, :and, *args, &block)
     end
-    alias_method :and_query, :query
-  
+    alias and_query query
+
     # Adds a *or* *query* clause. For examples, see the specs
     #
     # @return [Builder] self
     def or_query(*args, &block)
       _add_clause(false, :or, *args, &block)
     end
-  
+
     # Adds a *not* *query* clause. For examples, see the specs
     #
     # @return [Builder] self
@@ -86,14 +88,16 @@ module BodyBuilder
     # @param [String] direction ('asc' or 'desc')
     # @return [Builder] self
     def sort_field(field, direction = 'asc')
-      raise ArgumentError.new("direction must be 'asc' or 'desc', got '#{direction}'") unless ['desc', 'asc'].include?(direction.to_s.downcase)
+      unless %w[desc asc].include?(direction.to_s.downcase)
+        raise ArgumentError.new("direction must be 'asc' or 'desc', got '#{direction}'")
+      end
 
       field = field.to_sym
-      sort = sort_fields.find{|obj| obj.key?(field) }
+      sort = sort_fields.find { |obj| obj.key?(field) }
       if sort
         sort[field] = direction
       else
-        @sort_fields << {"#{field}".to_sym => direction}
+        @sort_fields << {"#{field}": direction}
       end
       self
     end
@@ -139,64 +143,63 @@ module BodyBuilder
     #
     # @param [Symbol] key (:and, :or, :not)
     # @return [Boolean] true if any filter clause is present
-    def has_filters?(key=nil)
-      @filters.any? do |k,v|
+    def filters?(key = nil)
+      @filters.any? do |k, v|
         next if key && k != key
+
         !v.empty?
       end
     end
-  
+
     # Checks if builder has any *query* clauses. If a key
     # is passed as an argument, it ignores all other keys.
     #
     # @param [Symbol] key (:and, :or, :not)
     # @return [Boolean] true if any query clause is present
-    def has_queries?(key=nil)
-      @queries.any? do |k,v|
+    def queries?(key = nil)
+      @queries.any? do |k, v|
         next if key && k != key
+
         !v.empty?
       end
     end
-  
+
     # Builds the elasticsearch query
     #
     # @return [Hash] built elasticsearch query
     def build
-      # TODO should this validation be recursive and optional?
-      if parent&.is_filter && has_queries?
-        raise StandardError.new('cannot query when parent is filter')
-      end
+      # TODO: should this validation be recursive and optional?
+      raise StandardError.new('cannot query when parent is filter') if parent&.is_filter && queries?
 
-      query = Marshal.load(Marshal.dump(self.base_query)) #dup
-      query.deep_transform_keys!{|k| k.to_sym}
+      query = Marshal.load(Marshal.dump(base_query)) # dup
+      query.deep_transform_keys!(&:to_sym)
       base_query_is_bool = query[:query]&.key?(:bool)
 
       if query.key?(:query) && !base_query_is_bool
         raise StandardError.new('cannot build query when base query root is not bool clause')
       end
 
-      is_simple_filter = (
+      is_simple_filter =
         only_one_and_clause?(:filters) ||
         (
           filters[:or].empty? &&
-          !self.has_queries? &&
-          !filters.any?{|_key, clauses| clauses.any?{|c| c.block }}
+          !queries? &&
+          !filters.any? { |_key, clauses| clauses.any?(&:block) }
         )
-      )
 
       # Process queries and filters
-      if !parent && !base_query_is_bool && !self.has_filters? && only_one_and_clause?(:queries)
-        query[:query] = self.queries[:and].first.build
+      if !parent && !base_query_is_bool && !filters? && only_one_and_clause?(:queries)
+        query[:query] = queries[:and].first.build
       else
         {filters: @filters, queries: @queries}.each do |type, object|
           current_is_simple_filter = is_simple_filter && type == :filters
           # build bool clause
           object.each do |key, clauses|
             next if clauses.empty?
-            
+
             built_clauses = clauses.map(&:build)
             built_clauses = built_clauses.first if clauses.size == 1 # && !base_query_is_bool
-            
+
             scope = if parent&.is_filter
               # query
               query[:query] ||= {}
@@ -250,14 +253,12 @@ module BodyBuilder
             # add minimum_should_match for query or filter if more than 1 clause
             if mapped_key == :should && scope[:should].is_a?(Array)
               if type == :queries
-                scope[:minimum_should_match] = self.query_minimum_should_match unless self.query_minimum_should_match.nil?
+                scope[:minimum_should_match] = query_minimum_should_match unless query_minimum_should_match.nil?
               else
-                scope[:minimum_should_match] = self.filter_minimum_should_match unless self.filter_minimum_should_match.nil?
+                scope[:minimum_should_match] = filter_minimum_should_match unless filter_minimum_should_match.nil?
               end
             end
-
           end
-
         end
       end
 
@@ -271,7 +272,7 @@ module BodyBuilder
       query[:sort] = sort_fields unless sort_fields.empty?
       query[:size] = @size unless @size.nil?
       query[:from] = @from unless @from.nil?
-  
+
       query
     end
 
@@ -283,8 +284,8 @@ module BodyBuilder
       reset_filters!
       reset_raw_options!
       reset_sort_fields!
-      from = nil
-      size = nil
+      self.from = nil
+      self.size = nil
     end
 
     # Empties all *query* caluses from the builder
@@ -322,7 +323,7 @@ module BodyBuilder
     def reset_sort_fields!
       @sort_fields = []
     end
-  
+
     private
 
     # Adds a clause to the builder
@@ -335,8 +336,8 @@ module BodyBuilder
     # @param [Hash] options (optional)
     # @param &block (optional)
     # @return [Builder] builder with added clause
-    def _add_clause(is_filter, key, type, field=nil, value=nil, options={}, &block)
-      obj = is_filter ? self.filters : self.queries
+    def _add_clause(is_filter, key, type, field = nil, value = nil, options = {}, &block)
+      obj = is_filter ? filters : queries
       obj[key] << Clause.new(type, is_filter, field, value, self, options, &block)
       self
     end
@@ -346,7 +347,7 @@ module BodyBuilder
     # @param [Symbol] type (:filters or :queries)
     # @return [Boolean]
     def only_one_and_clause?(type)
-      object = type == :filters ? self.filters : self.queries
+      object = type == :filters ? filters : queries
       object[:and].length == 1 && object[:or].empty? && object[:not].empty?
     end
 
