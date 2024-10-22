@@ -2,6 +2,7 @@
 
 require 'body_builder/version'
 require 'body_builder/clause'
+require 'active_support'
 require 'active_support/core_ext/hash/deep_merge'
 require 'active_support/core_ext/hash/keys'
 
@@ -31,45 +32,45 @@ module BodyBuilder
     # Adds a *and* *filter* clause. For examples, see the specs
     #
     # @return [Builder] self
-    def filter(*args, &block)
-      _add_clause(true, :and, *args, &block)
+    def filter(...)
+      _add_clause(true, :and, ...)
     end
     alias and_filter filter
 
     # Adds a *or* *filter* clause. For examples, see the specs
     #
     # @return [Builder] self
-    def or_filter(*args, &block)
-      _add_clause(true, :or, *args, &block)
+    def or_filter(...)
+      _add_clause(true, :or, ...)
     end
 
     # Adds a *not* *filter* clause. For examples, see the specs
     #
     # @return [Builder] self
-    def not_filter(*args, &block)
-      _add_clause(true, :not, *args, &block)
+    def not_filter(...)
+      _add_clause(true, :not, ...)
     end
 
     # Adds a *and* *query* clause. For examples, see the specs
     #
     # @return [Builder] self
-    def query(*args, &block)
-      _add_clause(false, :and, *args, &block)
+    def query(...)
+      _add_clause(false, :and, ...)
     end
     alias and_query query
 
     # Adds a *or* *query* clause. For examples, see the specs
     #
     # @return [Builder] self
-    def or_query(*args, &block)
-      _add_clause(false, :or, *args, &block)
+    def or_query(...)
+      _add_clause(false, :or, ...)
     end
 
     # Adds a *not* *query* clause. For examples, see the specs
     #
     # @return [Builder] self
-    def not_query(*args, &block)
-      _add_clause(false, :not, *args, &block)
+    def not_query(...)
+      _add_clause(false, :not, ...)
     end
 
     # Allows to add custom root level key to the built query
@@ -336,9 +337,9 @@ module BodyBuilder
     # @param [Hash] options (optional)
     # @param &block (optional)
     # @return [Builder] builder with added clause
-    def _add_clause(is_filter, key, type, field = nil, value = nil, options = {}, &block)
+    def _add_clause(is_filter, key, type, field = nil, value = nil, options = {}, &)
       obj = is_filter ? filters : queries
-      obj[key] << Clause.new(type, is_filter, field, value, self, options, &block)
+      obj[key] << Clause.new(type, is_filter, field, value, self, options, &)
       self
     end
 

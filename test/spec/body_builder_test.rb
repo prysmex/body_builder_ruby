@@ -140,9 +140,9 @@ class HelperTest < Minitest::Test
   # def test_reset!
   # end
 
-  ######
-  # ARGS#
-  ######
+  ########
+  # ARGS #
+  ########
 
   def test_single_query_1_arg
     a = @builder
@@ -180,9 +180,9 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  #########
-  # FILTERS#
-  #########
+  ###########
+  # FILTERS #
+  ###########
 
   # SINGLES
 
@@ -400,9 +400,9 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  #######
-  # QUERY#
-  #######
+  #########
+  # QUERY #
+  #########
 
   # SINGLES
 
@@ -488,9 +488,9 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  #######
-  # BLOCK#
-  #######
+  #########
+  # BLOCK #
+  #########
 
   def test_all_query_blocks
     a = @builder
@@ -638,9 +638,9 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  #################
-  # WITH BASE QUERY#
-  #################
+  ###################
+  # WITH BASE QUERY #
+  ###################
 
   def test_base_query
     @builder.base_query = {
@@ -691,9 +691,9 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
-  #####################
+  #########################
   # COMBINED QUERY/FILTER #
-  #####################
+  #########################
 
   def test_multi_0
     a = @builder
