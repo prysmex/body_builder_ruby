@@ -54,7 +54,7 @@ module BodyBuilder
             {query: {bool: child_hash}}
           else
             {query: child_hash}
-                       end
+          end
         end
         child_hash = child_hash[:bool] if child_hash.key?(:bool)
         hash.merge!(child_hash)
