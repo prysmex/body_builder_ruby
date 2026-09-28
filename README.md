@@ -161,16 +161,22 @@ BodyBuilder::Builder.new
 
 ### Raw option
 
+Root option keys may be strings or symbols and are normalized to symbols. Hashes
+passed as query fields or option values should use symbol keys for consistent
+Ruby output. A raw `query` replaces the generated query, while the dedicated
+sorting and pagination setters take precedence over raw `sort`, `size`, and
+`from` options.
+
 ```ruby
 BodyBuilder::Builder.new
   .query('match_all')
-  .raw_option('source', ['id'])
+  .raw_option(:_source, ['id'])
   .build
 # {
 #   "query": {
 #     "match_all": {}
 #   },
-#   "source": [
+#   "_source": [
 #     "id"
 #   ]
 # }

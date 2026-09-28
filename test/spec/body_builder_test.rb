@@ -68,6 +68,37 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
+  def test_raw_option_normalizes_string_key_and_avoids_root_key_collision
+    actual = @builder
+      .raw_option('size', 5)
+      .set_size(10)
+      .build
+
+    compare_jsons(actual, {size: 10})
+
+    assert_equal [:size], actual.keys
+  end
+
+  def test_raw_option_collisions_have_deterministic_precedence
+    actual = @builder
+      .query('match_all')
+      .raw_option('query', {term: {id: 1}})
+      .raw_option('sort', [{created_at: 'asc'}])
+      .raw_option('from', 5)
+      .sort_field(:updated_at, :DESC)
+      .set_from(10)
+      .build
+
+    expected = {
+      query: {term: {id: 1}},
+      sort: [{updated_at: 'desc'}],
+      from: 10
+    }
+    compare_jsons(actual, expected)
+
+    assert_equal expected.keys, actual.keys
+  end
+
   def test_sort_field
     a = @builder
       .sort_field(:id, 'desc')
@@ -83,6 +114,21 @@ class HelperTest < Minitest::Test
       .build
     b = { sort: [{id: 'asc'}] }
     compare_jsons(a, b)
+  end
+
+  def test_sort_field_normalizes_uppercase_and_symbol_directions
+    actual = @builder
+      .sort_field(:id, 'DESC')
+      .sort_field(:name, :ASC)
+      .build
+
+    compare_jsons(actual, {sort: [{id: 'desc'}, {name: 'asc'}]})
+  end
+
+  def test_sort_field_rejects_invalid_direction
+    error = assert_raises(ArgumentError) { @builder.sort_field(:id, 'sideways') }
+
+    assert_match "direction must be 'asc' or 'desc'", error.message
   end
 
   def test_queries?
@@ -137,8 +183,23 @@ class HelperTest < Minitest::Test
     assert_empty @builder.sort_fields
   end
 
-  # def test_reset!
-  # end
+  def test_reset_clears_minimum_should_match_values
+    @builder
+      .set_query_minimum_should_match(2)
+      .set_filter_minimum_should_match('75%')
+      .reset!
+
+    actual = @builder
+      .or_query('term', 'state', 'open')
+      .or_filter('term', 'visible', true)
+      .build
+
+    expected = {query: {bool: {
+      filter: {bool: {should: {term: {visible: true}}}},
+      should: {term: {state: 'open'}}
+    }}}
+    compare_jsons(actual, expected)
+  end
 
   ########
   # ARGS #
@@ -178,6 +239,16 @@ class HelperTest < Minitest::Test
       }
     }
     compare_jsons(a, b)
+  end
+
+  def test_hash_valued_field_is_not_mutated_by_options
+    field = {query: 'text'}
+    options = {boost: 2}
+
+    @builder.query('multi_match', field, nil, options).build
+
+    compare_jsons(field, {query: 'text'})
+    compare_jsons(options, {boost: 2})
   end
 
   ###########
@@ -691,6 +762,226 @@ class HelperTest < Minitest::Test
     compare_jsons(a, b)
   end
 
+  def test_base_query_filter_hash_keeps_added_filter
+    base_query = {query: {bool: {filter: {term: {tenant: 1}}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .filter('term', 'state', 'open')
+      .build
+
+    expected = {query: {bool: {filter: [
+      {term: {tenant: 1}},
+      {term: {state: 'open'}}
+    ]}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_query_should_hash_keeps_added_or_query
+    base_query = {query: {bool: {should: {term: {id: 1}}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .or_query('term', 'id', 2)
+      .build
+
+    expected = {query: {bool: {should: [
+      {term: {id: 1}},
+      {term: {id: 2}}
+    ]}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_query_must_hash_keeps_added_query
+    base_query = {query: {bool: {must: {term: {tenant: 1}}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .query('term', 'state', 'open')
+      .build
+
+    expected = {query: {bool: {must: [
+      {term: {tenant: 1}},
+      {term: {state: 'open'}}
+    ]}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_query_must_not_hash_keeps_added_not_query
+    base_query = {query: {bool: {must_not: {term: {archived: true}}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .not_query('term', 'deleted', true)
+      .build
+
+    expected = {query: {bool: {must_not: [
+      {term: {archived: true}},
+      {term: {deleted: true}}
+    ]}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_query_filter_hash_keeps_added_or_filter_group
+    base_query = {query: {bool: {filter: {term: {tenant: 1}}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .or_filter('term', 'state', 'open')
+      .set_filter_minimum_should_match(1)
+      .build
+
+    expected = {query: {bool: {filter: [
+      {term: {tenant: 1}},
+      {bool: {
+        should: {term: {state: 'open'}},
+        minimum_should_match: 1
+      }}
+    ]}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_array_valued_base_bool_clauses_append_builder_clauses
+    base_query = {query: {bool: {
+      must: [{term: {tenant: 1}}],
+      must_not: [{term: {archived: true}}],
+      should: [{term: {priority: 'high'}}],
+      filter: [{term: {visible: true}}]
+    }}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .query('term', 'state', 'open')
+      .not_query('term', 'deleted', true)
+      .or_query('term', 'priority', 'urgent')
+      .filter('term', 'published', true)
+      .build
+
+    expected = {query: {bool: {
+      must: [{term: {tenant: 1}}, {term: {state: 'open'}}],
+      must_not: [{term: {archived: true}}, {term: {deleted: true}}],
+      should: [{term: {priority: 'high'}}, {term: {priority: 'urgent'}}],
+      filter: [{term: {visible: true}}, {term: {published: true}}]
+    }}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_filter_array_keeps_multiple_or_filters_and_minimum
+    base_query = {query: {bool: {filter: [{term: {tenant: 1}}]}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .or_filter('term', 'state', 'open')
+      .or_filter('term', 'state', 'pending')
+      .set_filter_minimum_should_match('75%')
+      .build
+
+    expected = {query: {bool: {filter: [
+      {term: {tenant: 1}},
+      {bool: {
+        should: [
+          {term: {state: 'open'}},
+          {term: {state: 'pending'}}
+        ],
+        minimum_should_match: '75%'
+      }}
+    ]}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_filter_array_keeps_single_or_filter_and_minimum
+    base_query = {query: {bool: {filter: [{term: {tenant: 1}}]}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .or_filter('term', 'state', 'open')
+      .set_filter_minimum_should_match(1)
+      .build
+
+    expected = {query: {bool: {filter: [
+      {term: {tenant: 1}},
+      {bool: {
+        should: {term: {state: 'open'}},
+        minimum_should_match: 1
+      }}
+    ]}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_bool_filter_merges_filter_or_filter_and_not_filter
+    base_query = {query: {bool: {filter: {bool: {
+      must: {term: {tenant: 1}}
+    }}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .filter('term', 'state', 'open')
+      .or_filter('term', 'priority', 'high')
+      .not_filter('term', 'archived', true)
+      .build
+
+    expected = {query: {bool: {filter: {bool: {
+      must: [{term: {tenant: 1}}, {term: {state: 'open'}}],
+      should: {term: {priority: 'high'}},
+      must_not: {term: {archived: true}}
+    }}}}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_build_does_not_mutate_base_query_and_is_repeatable
+    base_query = {query: {bool: {must: {term: {tenant: 1}}}}}
+    original = Marshal.load(Marshal.dump(base_query))
+    builder = BodyBuilder::Builder.new(base_query:)
+      .query('term', 'state', 'open')
+
+    first = builder.build
+    second = builder.build
+
+    compare_jsons(first, second)
+    compare_jsons(base_query, original)
+  end
+
+  def test_base_query_merge_shapes_do_not_mutate_input
+    base_queries = [
+      {query: {bool: {should: {term: {priority: 'high'}}}}},
+      {query: {bool: {must_not: {term: {archived: true}}}}},
+      {query: {bool: {filter: [{term: {tenant: 1}}]}}},
+      {query: {bool: {filter: {bool: {must: {term: {tenant: 1}}}}}}}
+    ]
+
+    base_queries.each do |base_query|
+      original = Marshal.load(Marshal.dump(base_query))
+
+      BodyBuilder::Builder.new(base_query:)
+        .query('term', 'state', 'open')
+        .or_query('term', 'priority', 'urgent')
+        .not_query('term', 'deleted', true)
+        .filter('term', 'published', true)
+        .or_filter('term', 'region', 'north')
+        .not_filter('term', 'hidden', true)
+        .build
+
+      compare_jsons(base_query, original)
+    end
+  end
+
+  def test_string_key_base_query_is_supported_without_mutation
+    base_query = {'query' => {'bool' => {'must' => {'term' => {'tenant' => 1}}}}}
+    original = Marshal.load(Marshal.dump(base_query))
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .query('term', 'state', 'open')
+      .build
+
+    expected = {query: {bool: {must: [
+      {term: {tenant: 1}},
+      {term: {state: 'open'}}
+    ]}}}
+    compare_jsons(actual, expected)
+    compare_jsons(base_query, original)
+  end
+
+  def test_non_bool_base_query_is_rejected
+    base_query = {query: {match_all: {}}}
+
+    error = assert_raises(StandardError) do
+      BodyBuilder::Builder.new(base_query:).query('term', 'state', 'open').build
+    end
+
+    assert_equal 'cannot build query when base query root is not bool clause', error.message
+  end
+
   #########################
   # COMBINED QUERY/FILTER #
   #########################
@@ -952,7 +1243,8 @@ class HelperTest < Minitest::Test
       .or_query('match', 'message', 'nice')
       .set_query_minimum_should_match(2)
       .build
-    b = { query: { bool: { should: { match: { message: 'nice' } } } } }
+
+    b = {query: {bool: { should: {match: {message: 'nice'}}, minimum_should_match: 2 }}}
     compare_jsons(a, b)
   end
 
@@ -961,7 +1253,8 @@ class HelperTest < Minitest::Test
       .or_query('match', 'message', 'nice')
       .set_query_minimum_should_match(1)
       .build
-    b = { query: { bool: { should: { match: { message: 'nice' } } } } }
+
+    b = {query: {bool: { should: {match: {message: 'nice'}}, minimum_should_match: 1 }}}
     compare_jsons(a, b)
   end
 
@@ -983,6 +1276,106 @@ class HelperTest < Minitest::Test
       }
     }
     compare_jsons(a, b)
+  end
+
+  def test_string_minimum_should_match_expression
+    actual = @builder
+      .or_query('match', 'message', 'nice')
+      .set_query_minimum_should_match('75%')
+      .build
+
+    expected = {query: {bool: {
+      should: {match: {message: 'nice'}},
+      minimum_should_match: '75%'
+    }}}
+    compare_jsons(actual, expected)
+  end
+
+  def test_minimum_should_match_merges_hash_base_should
+    base_query = {
+      query: {bool: {
+        should: {term: {id: 1}},
+        minimum_should_match: 2
+      }}
+    }
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .or_query('term', 'id', 2)
+      .set_query_minimum_should_match(1)
+      .build
+
+    expected = {
+      query: {bool: {
+        should: [{term: {id: 1}}, {term: {id: 2}}],
+        minimum_should_match: 1
+      }}
+    }
+    compare_jsons(actual, expected)
+  end
+
+  def test_minimum_should_match_merges_array_base_should
+    base_query = {
+      query: {bool: {
+        should: [{term: {id: 1}}],
+        minimum_should_match: 2
+      }}
+    }
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .or_query('term', 'id', 2)
+      .set_query_minimum_should_match(1)
+      .build
+
+    expected = {
+      query: {bool: {
+        should: [{term: {id: 1}}, {term: {id: 2}}],
+        minimum_should_match: 1
+      }}
+    }
+    compare_jsons(actual, expected)
+  end
+
+  def test_base_minimum_is_preserved_without_setter
+    base_query = {
+      query: {bool: {
+        should: {term: {id: 1}},
+        minimum_should_match: 2
+      }}
+    }
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .or_query('term', 'id', 2)
+      .build
+
+    expected = {
+      query: {bool: {
+        should: [{term: {id: 1}}, {term: {id: 2}}],
+        minimum_should_match: 2
+      }}
+    }
+    compare_jsons(actual, expected)
+  end
+
+  def test_query_minimum_should_match_does_not_modify_base_query_by_itself
+    base_query = {query: {bool: {should: {term: {id: 1}}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .set_query_minimum_should_match(1)
+      .build
+
+    compare_jsons(actual, base_query)
+  end
+
+  def test_filter_minimum_should_match_does_not_modify_base_query_by_itself
+    base_query = {query: {bool: {filter: {bool: {
+      should: {term: {state: 'one'}}
+    }}}}}
+
+    actual = BodyBuilder::Builder.new(base_query:)
+      .set_filter_minimum_should_match(1)
+      .build
+
+    compare_jsons(actual, base_query)
   end
 
 end

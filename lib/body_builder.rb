@@ -75,30 +75,35 @@ module BodyBuilder
 
     # Allows to add custom root level key to the built query
     #
+    # String keys are normalized to symbols to prevent duplicate JSON keys.
+    # Raw query options replace a generated query. Dedicated sort, size, and
+    # from setters are applied afterward and take precedence over raw options.
+    #
     # @param [String, Symbol] key name of the key to set value to
     # @param [String, Symbol, Hash, Array] value the value to set
     # @return [Builder] self
     def raw_option(key, value)
-      @raw_options << {key: key, value: value}
+      @raw_options << {key: key.to_sym, value: value}
       self
     end
 
     # Sets the field to sort by
     #
     # @param [String, Symbol] field name of the field
-    # @param [String] direction ('asc' or 'desc')
+    # @param [String, Symbol] direction ('asc' or 'desc', case-insensitive)
     # @return [Builder] self
-    def sort_field(field, direction = 'asc')
-      unless %w[desc asc].include?(direction.to_s.downcase)
-        raise ArgumentError.new("direction must be 'asc' or 'desc', got '#{direction}'")
+    def sort_field(field, dir = 'asc')
+      normalized_dir = dir.to_s.downcase
+      unless %w[desc asc].include?(normalized_dir)
+        raise ArgumentError.new("direction must be 'asc' or 'desc', got '#{dir}'")
       end
 
       field = field.to_sym
-      sort = sort_fields.find { |obj| obj.key?(field) }
+      sort = @sort_fields.find { |obj| obj.key?(field) }
       if sort
-        sort[field] = direction
+        sort[field] = normalized_dir
       else
-        @sort_fields << {"#{field}": direction}
+        @sort_fields << {"#{field}": normalized_dir}
       end
       self
     end
@@ -122,20 +127,22 @@ module BodyBuilder
     end
 
     # Sets elasticsearch's *minimum_should_match* value on a *query* context
+    # containing an *or_query* added by this builder
     #
-    # @param [Integer] value
+    # @param [Integer, String] value
     # @return [Builder] self
     def set_query_minimum_should_match(value)
-      self.query_minimum_should_match = value
+      @query_minimum_should_match = value
       self
     end
 
     # Sets elasticsearch's *minimum_should_match* value on a *filter* context
+    # containing an *or_filter* added by this builder
     #
-    # @param [Integer] value
+    # @param [Integer, String] value
     # @return [Builder] self
     def set_filter_minimum_should_match(value)
-      self.filter_minimum_should_match = value
+      @filter_minimum_should_match = value
       self
     end
 
@@ -217,8 +224,13 @@ module BodyBuilder
                 h = {bool: {}}
                 filter.push(h)
                 h[:bool]
+              elsif filter.empty? || filter.key?(:bool)
+                filter[:bool] ||= {}
               else
-                query[:query][:bool][:filter][:bool] ||= {}
+                # Keep the existing filter and add our bool as a separate clause.
+                h = {bool: {}}
+                query[:query][:bool][:filter] = [filter, h]
+                h[:bool]
               end
             end
 
@@ -241,7 +253,8 @@ module BodyBuilder
             # add or merge to
             if scope.key?(mapped_key)
               value = scope[mapped_key]
-              value = [value] unless value.is_a? Array
+              scope[mapped_key] = value = [value] unless value.is_a?(Array)
+
               if built_clauses.is_a?(Array)
                 value.concat(built_clauses)
               else
@@ -251,12 +264,11 @@ module BodyBuilder
               scope[mapped_key] = built_clauses
             end
 
-            # add minimum_should_match for query or filter if more than 1 clause
-            if mapped_key == :should && scope[:should].is_a?(Array)
+            if mapped_key == :should
               if type == :queries
-                scope[:minimum_should_match] = query_minimum_should_match unless query_minimum_should_match.nil?
+                scope[:minimum_should_match] = @query_minimum_should_match unless @query_minimum_should_match.nil?
               else
-                scope[:minimum_should_match] = filter_minimum_should_match unless filter_minimum_should_match.nil?
+                scope[:minimum_should_match] = @filter_minimum_should_match unless @filter_minimum_should_match.nil?
               end
             end
           end
@@ -270,7 +282,7 @@ module BodyBuilder
       # RETURN if nested (skip sort, size, from )
       return query.key?(:query) ? query[:query] : query if parent
 
-      query[:sort] = sort_fields unless sort_fields.empty?
+      query[:sort] = @sort_fields unless @sort_fields.empty?
       query[:size] = @size unless @size.nil?
       query[:from] = @from unless @from.nil?
 
@@ -285,6 +297,8 @@ module BodyBuilder
       reset_filters!
       reset_raw_options!
       reset_sort_fields!
+      self.query_minimum_should_match = nil
+      self.filter_minimum_should_match = nil
       self.from = nil
       self.size = nil
     end

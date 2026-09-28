@@ -16,8 +16,9 @@ module BodyBuilder
     #
     # @param [String] type examples: (terms, match, match_all, etc...)
     # @param [Boolean] is_filter
-    # @param [String] field name of the field
-    # @param [String, Integer, Array<String, Integer>] value to be used by query o filter
+    # @param [String, Symbol, Hash] field field name or complete clause body
+    # @param [Object] value value used by the query or filter; commonly a String,
+    #   Symbol, Numeric, Boolean, Hash, or Array
     # @param [Builder] parent <description>
     # @param [Hash] options used to support params in clause
     def initialize(type, is_filter, field = nil, value = nil, parent = nil, options = {}, &block)
@@ -37,7 +38,7 @@ module BodyBuilder
       hash = if !@value.nil?
           {"#{@field}": @value}
         elsif @field.is_a? Hash
-          @field
+          @field.dup
         elsif @field
           {field: @field}
         else
